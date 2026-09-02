@@ -164,8 +164,10 @@ func resizeChild(parent windows.HWND) {
 	moveWindow(child, 0, 0, rc.Right-rc.Left, rc.Bottom-rc.Top, true)
 }
 
-// activateWindow foregrounds hwnd, with an AttachThreadInput fallback when the
-// direct SetForegroundWindow call is denied by Windows.
+// activateWindow brings hwnd to the foreground WITHOUT changing its size or
+// position. It never calls ShowWindow(SW_RESTORE): restoring a minimized window
+// is the responsibility of BringToFront, and doing it here unconditionally was
+// what could reset the window's geometry on a second-instance activation.
 func activateWindow(hwnd uintptr) {
 	if setForegroundWindow(hwnd) {
 		return
@@ -179,6 +181,5 @@ func activateWindow(hwnd uintptr) {
 			defer attachThreadInput(curThread, fgThread, false)
 		}
 	}
-	showWindow(hwnd, swRestore)
 	setForegroundWindow(hwnd)
 }

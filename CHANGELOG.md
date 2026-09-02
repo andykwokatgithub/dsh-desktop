@@ -11,6 +11,9 @@
 ### Added
 - `AGENTS.md`：面向 AI 代理与贡献者的仓库速查指南（工具链/构建/结构/坑点/约定）。
 
+### Fixed
+- 二次实例激活时不再改动主窗口几何：移除 `activateWindow` 回退路径中无条件的 `ShowWindow(SW_RESTORE)`，改为仅置顶（`SetForegroundWindow` + `AttachThreadInput` 回退）；最小化窗口的恢复（回到用户此前大小）仍由 `BringToFront` 处理。
+
 ## [0.1.0] - 2026-09-02
 
 ### Added
