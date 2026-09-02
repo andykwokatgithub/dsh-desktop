@@ -5,8 +5,7 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
-## [Unreleased]
-<!-- 下一版本将在此记录 -->
+## [0.2.0] - 2026-09-02
 
 ### Added
 - `AGENTS.md`：面向 AI 代理与贡献者的仓库速查指南（工具链/构建/结构/坑点/约定）。
