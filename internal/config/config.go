@@ -3,6 +3,11 @@ package config
 
 import "flag"
 
+// Version is the application version. It can be overridden at build time:
+//
+//	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.2.0" .
+var Version = "0.1.0"
+
 // Config is the fully-resolved runtime configuration.
 type Config struct {
 	URL            string // canonical local URL served by dsh web
@@ -17,6 +22,7 @@ type Config struct {
 	WindowWidth    int
 	WindowHeight   int
 	WindowTitle    string
+	ShowVersion    bool // print the version and exit
 }
 
 // Default returns the recommended defaults (see PRD V1.1).
@@ -53,6 +59,7 @@ func Parse(args []string) (*Config, error) {
 	fs.IntVar(&cfg.WindowWidth, "width", cfg.WindowWidth, "window width")
 	fs.IntVar(&cfg.WindowHeight, "height", cfg.WindowHeight, "window height")
 	fs.StringVar(&cfg.WindowTitle, "title", cfg.WindowTitle, "window title")
+	fs.BoolVar(&cfg.ShowVersion, "version", false, "print version and exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}

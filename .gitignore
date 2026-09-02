@@ -1,6 +1,8 @@
 # Build artifacts
 /dsh-desktop.exe
 *.exe
+*.exe~
+*~
 *.dll
 
 # Go workspace-local module/build cache (kept inside the repo for sandboxed builds)

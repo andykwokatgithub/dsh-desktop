@@ -6,6 +6,9 @@
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
 ## [Unreleased]
+<!-- 下一版本将在此记录 -->
+
+## [0.1.0] - 2026-09-02
 
 ### Added
 - 初始化 Go 工程脚手架：`main.go` 入口 + `internal/{config,service,singleinstance,webview,ui}` 分层，基于 Go + WebView2（`github.com/webview/webview_go`）。
@@ -16,10 +19,11 @@
 - 应用图标：DeepSeek Harness 鲸鱼 logo（蓝底白鲸），通过 `assets/deepseek.ico` 与 `rsrc_windows_amd64.syso` 嵌入 exe 与窗口。
 - 加载态/错误态页面（`internal/ui` 内嵌 `loading.html` / `error.html`）。
 - 安全脚本与外部链接交接（`internal/webview`）：默认禁用右键菜单、拦截外部 `http(s)`/`mailto:` 并交给系统默认浏览器。
-- 配置项：`-url/-host/-port/-command/-stop-on-exit/-devtools/-context-menu/-startup-timeout/-poll-ms/-width/-height/-title`。
+- 配置项：`-url/-host/-port/-command/-stop-on-exit/-devtools/-context-menu/-startup-timeout/-poll-ms/-width/-height/-title/-version`。
+- 版本号来源：`internal/config.Version`（默认 `0.1.0`，可在构建时用 `-ldflags -X ...=...` 覆盖），`-version` 打印版本。
 - 构建与工具：`build.ps1`、`tools/make-icon.mjs`、`README.md`、`.gitignore`、`.gitattributes`。
-- 文档：需求基线 PRD（`docs/dsh-destop-prd.md`，V1.1）与技术设计（`docs/dsh-desktop-technical-design.md`）。
-- Git 仓库初始化（`main` 分支首次提交）。
+- 文档：需求基线 PRD（`docs/dsh-destop-prd.md`，V1.1）与技术设计（`docs/dsh-desktop-technical-design.md`）、`CHANGELOG.md`。
+- Git 仓库初始化（`main` 分支）。
 
 ### Changed
 - （无）
@@ -31,6 +35,6 @@
 # 维护约定
 1. 每次合并会影响行为的变更时，在本次任务中同步更新本文件。
 2. 变更分类：Added（新增）/ Changed（变更）/ Deprecated（弃用）/ Removed（移除）/ Fixed（修复）/ Security（安全）。
-3. 首个正式版本发布时，将 [Unreleased] 条目整体移动到对应的版本标题（如 [0.1.0]），并打上 Git tag（`v0.1.0`）。
+3. 新变更先写入顶部的 [Unreleased]；发布时将其条目移动到对应版本标题（如 [0.1.1]），并在该标题后补日期，同时打上 Git tag（`v0.1.1`）。
 4. 版本号遵循语义化版本；破坏性变更递增 MAJOR，新增功能递增 MINOR，修复递增 PATCH。
 -->

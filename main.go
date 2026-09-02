@@ -28,6 +28,10 @@ func main() {
 	if err != nil {
 		fatal(2, "配置错误", err.Error())
 	}
+	if cfg.ShowVersion {
+		fmt.Printf("dsh-desktop %s\n", config.Version)
+		os.Exit(0)
+	}
 
 	// FR-03: single instance. If another is running, activate it and exit.
 	_, ok, err := singleinstance.Acquire()
