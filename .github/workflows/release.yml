@@ -74,8 +74,11 @@ jobs:
             dsh-desktop-win-x64.zip
 
       - name: Publish npm package (optional)
-        if: ${{ secrets.NPM_TOKEN != '' }}
         run: |
+          if (-not $env:NODE_AUTH_TOKEN) {
+            Write-Host "NPM_TOKEN not set; skipping npm publish."
+            exit 0
+          }
           node -e "
             const fs = require('fs');
             const p = JSON.parse(fs.readFileSync('package.json','utf8'));
