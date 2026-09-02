@@ -13,6 +13,7 @@
 
 ### Fixed
 - 二次实例激活时不再改动主窗口几何：移除 `activateWindow` 回退路径中无条件的 `ShowWindow(SW_RESTORE)`，改为仅置顶（`SetForegroundWindow` + `AttachThreadInput` 回退）；最小化窗口的恢复（回到用户此前大小）仍由 `BringToFront` 处理。
+- 外部链接交接不再闪黑色控制台：`internal/webview/shell.go` 打开系统默认浏览器时给 `cmd /c start` 补上 `CREATE_NO_WINDOW`（与后端服务 spawn 一致），避免每次 Ctrl+点击外部链接闪现 `cmd` 黑框。
 
 ## [0.1.0] - 2026-09-02
 

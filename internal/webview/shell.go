@@ -11,6 +11,7 @@ package webview
 
 import (
 	"os/exec"
+	"syscall"
 
 	webviewlib "github.com/webview/webview_go"
 )
@@ -41,8 +42,13 @@ document.addEventListener('click', function(e){
 // BindExternal registers the bridge that opens a URL in the default browser.
 func BindExternal(view webviewlib.WebView) error {
 	open := func(url string) (string, error) {
-		// `start "" <url>` opens the URL with the system handler.
+		// `start "" <url>` opens the URL with the system default handler.
 		cmd := exec.Command("cmd", "/c", "start", "", url)
+		// The host process is a GUI subsystem binary (no console). cmd.exe is a
+		// console-subsystem program, so without CREATE_NO_WINDOW a new console
+		// window flashes for every external link opened. Mirror the service
+		// spawn: suppress it so only the default browser appears.
+		cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: 0x08000000} // CREATE_NO_WINDOW
 		_ = cmd.Start()
 		return "", nil
 	}
