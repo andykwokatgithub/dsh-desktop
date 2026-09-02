@@ -1,0 +1,18 @@
+# Normalize text line endings and keep binaries untouched.
+* text=auto eol=lf
+*.ps1 text eol=crlf
+*.md text eol=lf
+*.go text eol=lf
+*.html text eol=lf
+*.mod text eol=lf
+*.sum text eol=lf
+*.mjs text eol=lf
+*.ico binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.syso binary
+*.exe binary
+*.dll binary
