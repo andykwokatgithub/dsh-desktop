@@ -2,6 +2,11 @@
 # embedding the DeepSeek Harness icon.
 # Requires Go with CGO + a GCC toolchain (e.g. mingw-w64) on PATH, and (only to
 # regenerate the icon resources) Node with sharp.
+param(
+    # Optional version to embed via -ldflags (-X internal/config.Version).
+    # When set, the main package builds with this version reported by -version.
+    [string]$Version = ""
+)
 $ErrorActionPreference = "Stop"
 
 # Use workspace-local module/build cache so the repo builds in sandboxed envs.
@@ -27,7 +32,11 @@ if ($needSyso) {
 }
 
 Write-Host "==> go build (GUI subsystem + icon)"
-go build -ldflags "-H=windowsgui" -o $out .
+$ldflags = "-H=windowsgui"
+if ($Version -ne "") {
+    $ldflags += " -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=$Version"
+}
+go build -ldflags $ldflags -o $out .
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Built $out"
 }

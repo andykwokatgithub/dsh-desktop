@@ -23,6 +23,8 @@ type Config struct {
 	WindowHeight   int
 	WindowTitle    string
 	ShowVersion    bool // print the version and exit
+	CheckUpdate    bool // check GitHub Releases for a newer version and exit
+	Update         bool // download + apply a newer version and exit
 }
 
 // Default returns the recommended defaults (see PRD V1.1).
@@ -60,6 +62,8 @@ func Parse(args []string) (*Config, error) {
 	fs.IntVar(&cfg.WindowHeight, "height", cfg.WindowHeight, "window height")
 	fs.StringVar(&cfg.WindowTitle, "title", cfg.WindowTitle, "window title")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "print version and exit")
+	fs.BoolVar(&cfg.CheckUpdate, "check-update", false, "check GitHub Releases for a newer version and exit")
+	fs.BoolVar(&cfg.Update, "update", false, "download and apply the latest release, then exit")
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}

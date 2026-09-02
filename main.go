@@ -6,16 +6,20 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
+	"syscall"
 	"time"
 
 	"github.com/deepseek-ai/dsh-desktop/internal/config"
 	"github.com/deepseek-ai/dsh-desktop/internal/service"
 	"github.com/deepseek-ai/dsh-desktop/internal/singleinstance"
 	"github.com/deepseek-ai/dsh-desktop/internal/ui"
+	"github.com/deepseek-ai/dsh-desktop/internal/update"
 	dswebview "github.com/deepseek-ai/dsh-desktop/internal/webview"
 	"golang.org/x/sys/windows"
 )
@@ -30,6 +34,13 @@ func main() {
 	}
 	if cfg.ShowVersion {
 		fmt.Printf("dsh-desktop %s\n", config.Version)
+		os.Exit(0)
+	}
+
+	// Update path: handled as a plain CLI command before the GUI/single-instance
+	// path, so -check-update / -update never open a window.
+	if cfg.CheckUpdate || cfg.Update {
+		runUpdateCmd(cfg)
 		os.Exit(0)
 	}
 
@@ -138,4 +149,74 @@ func messageBox(title, text string) {
 	tx, _ := windows.UTF16PtrFromString(text)
 	const mbOKIconError = 0x00000010 // MB_ICONERROR
 	_, _ = windows.MessageBox(0, tx, tt, mbOKIconError)
+}
+
+// runUpdateCmd resolves the latest GitHub release and, for -update, downloads
+// and applies it. It runs in CLI mode (no GUI); output goes to stdout and
+// failures are also recorded in the dsh-desktop log.
+func runUpdateCmd(cfg *config.Config) {
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+
+	exeURL, sha, latest, err := update.Resolve(ctx, update.DefaultRepo, config.Version)
+	if err != nil {
+		if errors.Is(err, update.ErrNoNewer) {
+			fmt.Printf("dsh-desktop is up to date (current %s)\n", config.Version)
+			return
+		}
+		_ = appendLog("update check failed: " + err.Error())
+		fmt.Printf("update check failed: %v\n", err)
+		return
+	}
+
+	fmt.Printf("dsh-desktop %s is available (current %s)\n", latest, config.Version)
+	if !cfg.Update {
+		return
+	}
+
+	exe, err := os.Executable()
+	if err != nil {
+		fmt.Printf("cannot resolve executable path: %v\n", err)
+		return
+	}
+	target := filepath.Join(filepath.Dir(exe), "dsh-desktop.exe")
+	staged := target + ".new"
+
+	if err := update.Download(ctx, exeURL, sha, staged); err != nil {
+		_ = appendLog("update download failed: " + err.Error())
+		fmt.Printf("update download failed: %v\n", err)
+		return
+	}
+	fmt.Printf("downloaded and verified %s -> %s\n", latest, staged)
+
+	if err := applyUpdate(staged, target); err != nil {
+		_ = appendLog("update apply failed: " + err.Error())
+		fmt.Printf("update staged at \"%s\"; replace \"%s\" with it and restart.\n", staged, target)
+		return
+	}
+}
+
+// applyUpdate swaps staged (the newly downloaded exe) over target using a
+// detached helper that waits for this process to exit before copying, then
+// relaunches the app. Runs only on the opt-in -update CLI path.
+func applyUpdate(staged, target string) error {
+	helper := target + ".update.cmd"
+	const createNoWindow = 0x08000000 // CREATE_NO_WINDOW
+
+	script := "@echo off\r\n" +
+		"timeout /t 2 /nobreak >nul\r\n" +
+		"copy /y \"" + staged + "\" \"" + target + "\" >nul\r\n" +
+		"del \"" + staged + "\" >nul 2>nul\r\n" +
+		"start \"\" \"" + target + "\"\r\n" +
+		"del \"%~f0\" >nul 2>nul\r\n"
+	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
+		return err
+	}
+	cmd := exec.Command("cmd", "/c", helper)
+	cmd.SysProcAttr = &syscall.SysProcAttr{CreationFlags: createNoWindow}
+	if err := cmd.Start(); err != nil {
+		_ = os.Remove(helper)
+		return err
+	}
+	return nil
 }

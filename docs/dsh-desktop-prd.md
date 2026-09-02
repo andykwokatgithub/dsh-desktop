@@ -110,14 +110,14 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 
 - **开发语言**：Go 1.21+
 - **核心依赖库**：
-  - `github.com/webview/webview`：WebView2 绑定与窗口管理（Windows 上基于 WebView2/Edge Chromium；注意其依赖 **CGO**，**难以跨平台交叉编译**）。
+  - `github.com/webview/webview_go`：WebView2 绑定与窗口管理（Windows 上基于 WebView2/Edge Chromium；注意其依赖 **CGO**，**难以跨平台交叉编译**）。
   - `golang.org/x/sys/windows`：调用底层 Windows API（Mutex、窗口激活、消息等）。
 - **外部环境依赖**：
   - 全局安装 `dsh` 命令行工具（`npm i -g @deepseek-ai/dsh`），且 `dsh`、`node` 均在 `PATH` 中。Windows spawn 需处理 `.cmd`/`.ps1` shim（见 FR-01）。
   - Node.js 下限以满足已安装 `dsh` 的依赖要求为准（见 §4 说明）。
   - WebView2 Evergreen 运行时（Windows 11 预装，Windows 10 需手动安装）。
 - **工程与分发**：
-  - 因 `webview` 依赖 CGO，**跨平台交叉编译困难**；Windows 构建需在本机/Windows 环境完成。
+  - 因 `webview_go` 依赖 CGO，**跨平台交叉编译困难**；Windows 构建需在本机/Windows 环境完成。
   - 产物需随包携带 **WebView2Loader.dll**（或依赖系统 Runtime）。
   - 分发形态：**MSI / 便携版**；建议做**代码签名**以规避 Windows SmartScreen 警告；自动更新列为后续迭代（见 §10）。
 

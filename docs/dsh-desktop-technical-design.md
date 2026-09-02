@@ -5,7 +5,7 @@
 | :--- | :--- | :--- | :--- |
 | V1.0 | 2026-09-02 | AI Assistant | 依据 PRD V1.1 与审阅意见，固化推荐设计决策，给出技术实现骨架与伪代码。 |
 
-> 配套文档：[`dsh-destop-prd.md`](./dsh-destop-prd.md)（需求基线）。
+> 配套文档：[`dsh-desktop-prd.md`](./dsh-desktop-prd.md)（需求基线）。
 > 依据的 `dsh` 实现事实见 PRD §1.1；本文所有 Windows API 与 Go 库用法以"推荐实现 + 需互操作处标注"方式给出。
 
 ---
@@ -63,20 +63,16 @@ dsh-desktop/
 ├─ go.mod / go.sum
 ├─ main.go                 # 入口：组装组件、启动消息循环
 ├─ internal/
-│  ├─ singleinstance/      # FR-03 单实例：Mutex + 锚点窗口 + 激活消息
-│  │   ├─ mutex.go
-│  │   ├─ anchor.go        # 自定义窗口类注册 + WndProc
-│  │   └─ activate.go      # FindWindowW + SendMessageTimeout
+│  ├─ singleinstance/      # FR-03 单实例：Mutex + 原生窗口类 + 激活消息 + Win32 封装
+│  │   ├─ singleinstance.go  # 互斥体 Acquire / ActivateExisting
+│  │   ├─ window.go          # 窗口类注册 + WndProc + BringToFront
+│  │   └─ win32.go           # user32/kernel32 的 LazyDLL 封装
 │  ├─ service/             # FR-01/FR-04 服务探测、spawn、健康校验、生命周期
-│  │   ├─ probe.go         # 端口 + HTTP 健康校验
-│  │   ├─ spawn.go         # cmd /c 启动、env 继承、stdout 捕获
-│  │   └─ lifecycle.go     # 持久化复用、陈旧检测、进程树清理
-│  ├─ webview/             # FR-02 WebView2 窗口 + 导航/安全控制
-│  │   ├─ window.go
-│  │   ├─ navpolicy.go     # 导航白名单 / 外部链接系统浏览器
-│  │   └─ security.go      # DevTools/右键/注入 (需互操作)
+│  │   └─ service.go         # Healthy/PortOpen/Spawn/WaitHealthy/Stop
+│  ├─ webview/             # FR-02 安全脚本 + 外部链接交接
+│  │   └─ shell.go           # SecurityInit / BindExternal
 │  └─ ui/                  # loading.html / error.html（go:embed）
-└─ build/                  # MSI/安装配置、版本、签名备注
+└─ build/                  # MSI/安装配置、版本、签名备注（本期未建）
 ```
 
 ---
@@ -87,7 +83,7 @@ dsh-desktop/
 
 采用 D2 + D3：`Local\` 互斥体 + **自定义原生锚点窗口**（唯一窗口类 + 自定义 WndProc 处理激活消息）。该锚点窗口负责跨进程定位与激活，WebView 内容窗口与它关联。
 
-**互斥体创建（`internal/singleinstance/mutex.go`）**
+**互斥体创建（`internal/singleinstance/singleinstance.go`）**
 ```go
 package singleinstance
 
@@ -116,7 +112,7 @@ func Acquire() (handle windows.Handle, exists bool, err error) {
 }
 ```
 
-**锚点窗口注册 + WndProc（`internal/singleinstance/anchor.go`）**
+**锚点窗口注册 + WndProc（`internal/singleinstance/window.go`）**
 ```go
 // 注册唯一窗口类，并创建锚点窗口（隐藏、不进任务栏）。
 // 该窗口是"单实例定位 + 激活消息接收器"，与 webview 窗口关联协作。
@@ -129,7 +125,7 @@ func RegisterAnchor(activate func()) error {
 }
 ```
 
-**激活（`internal/singleinstance/activate.go`）**
+**激活（`internal/singleinstance/singleinstance.go`）**
 ```go
 // 第二实例：找到已有锚点窗口，发激活消息，随后退出。
 func SignalExisting() (bool, error) {
@@ -143,7 +139,7 @@ func SignalExisting() (bool, error) {
 }
 ```
 
-> 互操作说明：锚点窗口自定义类 + WndProc 是我们自己注册的原生窗口；`github.com/webview/webview` 默认创建自己的窗口。二者协调：锚点窗口收到 `DSHDesktopApp.Activate` 后，通过 `FindWindowW`/`SetForegroundWindow(with AttachThreadInput)` 切换到实际 webview 窗口。若希望将 webview 直接创建为锚点子窗口，需改用暴露 HWND/窗口控制的 WebView2 绑定（如 `github.com/jchv/go-webview2`）——见 §7 开放问题。
+> 互操作说明：`webview_go.NewWindow(debug, parentHwnd)` 将 WebView2 控件直接嵌入我们自建的锚点窗口（唯一窗口类 `DSHDesktopAppMainWindow`），因此该窗口同时承担"单实例定位 + 激活消息接收器 + WebView 宿主"。第二实例经 `FindWindowW(类名)` 定位并以注册消息通知其自行 `BringToFront`，无需在锚点窗口与实际 webview 窗口之间切换——见 `internal/singleinstance`。
 
 > 前台激活限制（D3/§FR-03）：后台进程直接 `SetForegroundWindow` 常被系统拒绝。回退链：`ShowWindow(hwnd, SW_RESTORE)` → `SetForegroundWindow` → 失败时 `AttachThreadInput(foreground, hwnd)` 后再次 `SetForegroundWindow` → 仍失败则闪任务栏图标提醒。
 
@@ -151,7 +147,7 @@ func SignalExisting() (bool, error) {
 
 采用 D4 + D5 + D6。
 
-**健康校验（`internal/service/probe.go`）**
+**健康校验（`internal/service/service.go`）**
 ```go
 func Healthy(addr string) bool {
     // addr = "http://127.0.0.1:3080"
@@ -166,7 +162,7 @@ func Healthy(addr string) bool {
 // 1) Healthy→复用；2) 端口可连但 !Healthy→陈旧/非dsh；3) 任一方"端口冲突"→报错不重启。
 ```
 
-**spawn（`internal/service/spawn.go`）**
+**spawn（`internal/service/service.go`）**
 ```go
 func Spawn(ctx context.Context) (stdout io.Reader, err error) {
     // D6: 经 cmd /c 解析 shim；继承 PATH/DSH_HOME；--no-open
@@ -184,23 +180,18 @@ func Spawn(ctx context.Context) (stdout io.Reader, err error) {
 
 ### 4.3 WebView2 窗口（FR-02）
 
-采用 `github.com/webview/webview`。
+采用 `github.com/webview/webview_go`——经 `webview.NewWindow(debug, parentHwnd)` 将 WebView2 嵌入我们自建的原生窗口（见 `internal/singleinstance`）。
 
 ```go
-w := webview.New(webview.Settings{
-    Title:    "DeepSeek Harness",
-    Width:    1200,
-    Height:   800,
-    Resizable:true,
-    Debug:    false,
-    URL:      loadLocal("loading.html"), // 先加载占位页
-})
-defer w.Destroy()
+// 嵌入到我们自建的 DSHDesktopAppMainWindow 锚点窗口（D3: 我们拥有窗口类）
+view := webview.NewWindow(false /*debug 默认关,见 D7*/, unsafe.Pointer(hwnd))
+defer view.Destroy()
+view.Init(securityInit)      // 注入安全脚本(右键/外链拦截,见 internal/webview)
+view.SetHtml(loadingHTML)    // 先加载占位页(go:embed)
 // 服务健康后跳转
-w.Navigate("http://127.0.0.1:3080")
-// 页面加载后复核标题（WebView2 可能随 <title> 改动）
-w.Dispatch(func() { w.SetTitle("DeepSeek Harness") })
-w.Run() // 主循环（阻塞）
+view.Navigate("http://127.0.0.1:3080")
+// 页面加载后复核标题（WebView2 可能随 <title> 改动,本期见 PRD FR-02 备注）
+view.Run() // 主循环（阻塞）
 ```
 
 - **加载态/错误态**：`ui/loading.html` 与 `ui/error.html` 用 `go:embed` 打包；健康校验**成功前**先加载 loading，**失败超时**后加载 error（含"重试/端口冲突/dsh 未安装/WebView2 未安装"递进提示）。
@@ -238,18 +229,17 @@ OnStart():                     // 每次启动
 
 ### 4.6 安全（FR-02 / NFR 安全行）
 
-- **导航白名单**：`NavPolicy` 只放行 `http://127.0.0.1:3080`；对 `NewWindowRequested`/`NavigationStarting` 拦截外部 `http(s)`/`mailto:` → 交给系统默认浏览器（`cmd /c start <url>` 或 `xdg` 对应）。
-- **DevTools / 右键菜单（需互操作）**：`github.com/webview/webview` 的 `Settings` 未直接暴露 `AreDefaultContextMenusEnabled`/`AreDevToolsEnabled`。推荐的可行路径：
-  1. 通过 WebView2 `ICoreWebView2Settings` 接口调用 `put_AreDevToolsEnabled(FALSE)`、`put_AreDefaultContextMenusEnabled(FALSE)`（经 `webview` 底层 HWND/Controller 取接口，需额外 CGO 互操作代码）；或
-  2. 改用暴露更多 WebView2 控制的绑定（`github.com/jchv/go-webview2`）；或
-  3. 最低限度用 JS 注入 `document.addEventListener('contextmenu', e => e.preventDefault())` + 不开启 `Debug`（但也只覆盖 DOM 层）。
-  > 本期建议：`Debug:false`（默认不开 DevTools），右键菜单采用(1)或(2)断开默认菜单；若互操作成本过高，退化为(3) + 说明局限，见 §7 开放问题。
+- **导航白名单**：仅放行本地规范源 `http://127.0.0.1:3080`。高层绑定不暴露导航事件（`NavigationStarting`/`NewWindowRequested`），因此实际在 DOM 层通过注入脚本拦截外部 `http(s)`/`mailto:` 点击并交给系统默认浏览器（`cmd /c start <url>`），见 `internal/webview/shell.go`。重定向/表单提交/新窗口不在拦截范围（已知局限，见 §7）。
+- **DevTools / 右键菜单（需互操作）**：`github.com/webview/webview_go` 的 `NewWindow(debug, hwnd)` 仅暴露 debug 开关，未直接暴露 `AreDefaultContextMenusEnabled`/`AreDevToolsEnabled`。实际实现采用折中路径（见 `internal/webview/shell.go`）：
+  1. `Debug` 默认 `false`（不开 DevTools）；或
+  2. 最低限度用 JS 注入 `document.addEventListener('contextmenu', e => e.preventDefault())`（仅覆盖 DOM 层）。
+  > 说明：本期采纳了上述折中方案（PRD D7）；如需完全关闭 WebView2 默认右键菜单/DevTools，需互操作 ICoreWebView2Settings（经底层 HWND/Controller 取接口），或改用 `github.com/jchv/go-webview2`（见 §7 开放问题）。
 
 ---
 
 ## 5. 构建与打包
 
-- **CGO**：`github.com/webview/webview` 依赖 CGO，需在本机/Windows 工具链上 `go build`；无法从 Linux 交叉编译到 Windows。
+- **CGO**：`github.com/webview/webview_go` 依赖 CGO，需在本机/Windows 工具链上 `go build`；无法从 Linux 交叉编译到 Windows。
 - **依赖产物**：WebView2Loader.dll（WebView2 相关）；或依赖系统已装的 WebView2 Evergreen Runtime。
 - **分发**：`MSI`（WiX/msi 工具）或便携版；`go:embed` 打进 loading/error 资源。
 - **代码签名**：签名以避免 SmartScreen 警告；自动更新列入后续（PRD §10）。
@@ -264,7 +254,7 @@ OnStart():                     // 每次启动
 | `dsh` 未安装/不可解析 | `cmd /c dsh ...` 返回非 0 / `exec: executable file not found` → 友好提示 + error.html | AC-05 |
 | 端口被非 dsh 占用 | 端口可连但 `Healthy()` 为假 → 报"端口冲突"，**不重启** | AC-06 |
 | `dsh` 服务僵死 | 端口开放但健康失败 → `KillTree` + 重新 `Spawn` | AC-03 |
-| WebView2 缺失 | `webview.New`/Runtime 初始化的系统错误 → 提示下载 Runtime | — |
+| WebView2 缺失 | `webview.NewWindow`/Runtime 初始化的系统错误 → 提示下载 Runtime | — |
 | 启动超时 | 30s 轮询失败 → error.html + 退出；不残留半启动子进程 | — |
 | 锚点窗口找不到 | 互斥体存在但无锚点窗口（僵尸/跨会话）→ 记录日志并退出 | — |
 | 外部链接/下载 | 外部导航 → 系统浏览器；下载按需处理 | AC-07 |
@@ -273,8 +263,8 @@ OnStart():                     // 每次启动
 
 ## 7. 风险与开放问题
 
-1. **WebView2 窗口与自定义锚点窗口的关系**：推荐方案 D3 里，"锚点窗口"作为单实例消息接收器；但如何精确关联并置顶实际的 webview 内容窗口（尤其是当 webview 库默认自建窗口时）需要落地验证。若 `github.com/webview/webview` 无法方便取得 HWND/自定义类，建议切换到能暴露窗口控制的绑定，或把 webview 作为锚点子窗口（需额外互操作）。
-2. **DevTools/右键菜单的关闭**：受库能力限制，需互操作或换绑定（§4.6），是本期主要的"超出库默认"工作量。
+1. **WebView2 窗口与自定义锚点窗口的关系**（已在 0.1.0 落地）：`webview_go.NewWindow(debug, parentHwnd)` 将 WebView2 直接嵌入我们自己注册的原生锚点窗口（唯一窗口类 `DSHDesktopAppMainWindow`），因此锚点窗口同时作为单实例接收器与 WebView 宿主，无需再"切换到实际 webview 窗口"。已解决。
+2. **DevTools/右键菜单的关闭**：受 `webview_go` 高层绑定能力限制，本期折中为 `Debug:false` + JS 注入（§4.6）；如需完全关闭默认右键菜单，仍须互操作 ICoreWebView2Settings 或换绑定。
 3. **`dsh web` 版本差异**：持久化服务可能因升级/改配置而陈旧，需约定健康/版本校验口径（PRD FR-04）。
 4. **多会话/多用户**：D2 用 `Local\` 已缓解；若业务要求"机器级唯一"，需评估 `Global\` 的副作用。
 5. **子进程树清理的可靠性**：`dsh` 可能派生子节点；采用 Job Object 或 `taskkill /T`，需在验收中覆盖"强制退出"路径，避免僵尸进程。

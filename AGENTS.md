@@ -11,7 +11,7 @@
 - **单实例防重**:重复启动时激活已有窗口并退出。
 - **打包体验**:GUI 子系统(无控制台)+ DeepSeek 图标 + 加载/错误页。
 
-需求与实现约束见 `docs/dsh-destop-prd.md`(V1.1)与 `docs/dsh-desktop-technical-design.md`。
+需求与实现约束见 `docs/dsh-desktop-prd.md`(V1.1)与 `docs/dsh-desktop-technical-design.md`。
 
 ## 2. 环境与工具链(重要)
 

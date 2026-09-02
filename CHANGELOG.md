@@ -10,6 +10,11 @@
 
 ### Added
 - `AGENTS.md`：面向 AI 代理与贡献者的仓库速查指南（工具链/构建/结构/坑点/约定）。
+- **发布/分发打通**：新增 `LICENSE`（MIT，含 DeepSeek 图标商标声明）、`package.json`（npm 包，声明 `dsh.bundle.patch`）、`cordis.patch.yml`、`bin/dsh-desktop.mjs` 启动器、`scripts/fetch-exe.mjs`（下载并 SHA256 校验预编译 EXE）。
+- **发布流水线**：`.github/workflows/ci.yml`（go vet / 构建 / npm 清单校验）与 `.github/workflows/release.yml`（tag 触发：注入版本号构建、生成 `sha256`、附到 GitHub Release、可选 `npm publish`）。
+- **内置自更新**：新增 `internal/update`（GitHub Releases 解析、语义化版本比较、带校验的下载与原子替换）与 `-check-update`、`-update` 两个 CLI flag。
+- `build.ps1` 新增 `-Version` 参数，用于在构建时通过 `-ldflags -X .../config.Version` 注入版本号。
+- 文档：`docs/publish.md`（发布/收录/安装/更新指南）。
 
 ### Fixed
 - 二次实例激活时不再改动主窗口几何：移除 `activateWindow` 回退路径中无条件的 `ShowWindow(SW_RESTORE)`，改为仅置顶（`SetForegroundWindow` + `AttachThreadInput` 回退）；最小化窗口的恢复（回到用户此前大小）仍由 `BringToFront` 处理。
@@ -29,7 +34,7 @@
 - 配置项：`-url/-host/-port/-command/-stop-on-exit/-devtools/-context-menu/-startup-timeout/-poll-ms/-width/-height/-title/-version`。
 - 版本号来源：`internal/config.Version`（默认 `0.1.0`，可在构建时用 `-ldflags -X ...=...` 覆盖），`-version` 打印版本。
 - 构建与工具：`build.ps1`、`tools/make-icon.mjs`、`README.md`、`.gitignore`、`.gitattributes`。
-- 文档：需求基线 PRD（`docs/dsh-destop-prd.md`，V1.1）与技术设计（`docs/dsh-desktop-technical-design.md`）、`CHANGELOG.md`。
+- 文档：需求基线 PRD（`docs/dsh-desktop-prd.md`，V1.1）与技术设计（`docs/dsh-desktop-technical-design.md`）、`CHANGELOG.md`。
 - Git 仓库初始化（`main` 分支）。
 
 ### Changed

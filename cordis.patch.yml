@@ -1,0 +1,28 @@
+# cordis.patch.yml — bundle patch layer for @deepseek-ai/dsh-desktop.
+#
+# A DSH bundle is an npm package whose package.json declares:
+#   "dsh": { "bundle": { "patch": "./cordis.patch.yml" } }
+# This file is that patch layer: a top-level YAML ARRAY of loader patch
+# entries that is merged over the profile's entry list in dsh.profile.bundles
+# order (see @deepseek-ai/dsh-app-boot).
+#
+# dsh-desktop's real deliverable is a native Windows shell (dsh-desktop.exe)
+# that is fetched/updated from GitHub Releases by the npm postinstall and the
+# built-in self-updater. Bundling it as a DSH bundle is what makes it
+# discoverable in plugin markets (dshmarket) and installable via:
+#
+#   dsh plugin --profile web add github:deepseek-ai/dsh-desktop
+#
+# The patch below is intentionally empty for now. Wiring a harness-level
+# command/skill entry that launches the shell is a documented follow-up and
+# requires the exact target entry id + schema from the base app config; an
+# entry whose target row is absent only logs a Loader warning and is skipped.
+#
+# To add a real entry, append a row following the loader patch shape, e.g.:
+#
+# - id: <target-entry-id>          # the entry to patch in the base config
+#   value: ...                     # or `insert: true` / nested fields
+#
+# An empty array is valid: the bundle still declares dsh.bundle and joins the
+# profile layer stack, so markets validate it and `dsh plugin` manages it.
+[]

@@ -1,0 +1,53 @@
+# Continuous integration for dsh-desktop.
+# Builds the Windows GUI binary (CGO + WebView2) and validates the npm package.
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*"]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    defaults:
+      run:
+        shell: pwsh
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.21"
+          cache: false
+
+      - name: Install MinGW toolchain (for CGO / webview_go)
+        run: choco install mingw -y --no-progress
+
+      - name: Add MinGW to PATH
+        run: |
+          $mingw = "$env:ProgramData\chocolatey\lib\mingw\tools\install\mingw64\bin"
+          if (Test-Path $mingw) { Add-Content $env:GITHUB_PATH $mingw }
+          else { Write-Host "shared build; expecting gcc on PATH" ; Get-Command gcc -ErrorAction SilentlyContinue }
+
+      - name: go vet (excludes known cgo unsafe.Pointer false positive in singleinstance)
+        run: go vet ./internal/config ./internal/service ./internal/update ./internal/ui ./internal/webview .
+
+      - name: Build (build.ps1)
+        run: .\build.ps1 -Version 0.0.0-ci
+
+      - name: Print version
+        run: go run . -version
+
+      - name: Validate npm package manifest
+        run: node -e "JSON.parse(require('fs').readFileSync('package.json','utf8')); console.log('package.json OK')"
+
+  # Lightweight job to keep npm metadata consistent (no Go toolchain needed).
+  check-license:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: License present
+        run: test -f LICENSE

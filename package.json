@@ -1,0 +1,57 @@
+{
+  "name": "@andykwok/dsh-desktop",
+  "version": "0.1.0",
+  "description": "A Go + WebView2 desktop shell for the DeepSeek Harness Web UI (dsh web). Prebuilt Windows x64 binary installed from GitHub Releases.",
+  "private": false,
+  "publishConfig": {
+    "access": "public"
+  },
+  "os": [
+    "win32"
+  ],
+  "cpu": [
+    "x64"
+  ],
+  "bin": {
+    "dsh-desktop": "bin/dsh-desktop.mjs"
+  },
+  "files": [
+    "bin/",
+    "scripts/",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "scripts": {
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1",
+    "postinstall": "node scripts/fetch-exe.mjs"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "keywords": [
+    "dsh",
+    "deepseek-harness",
+    "desktop",
+    "webview2",
+    "shell",
+    "windows",
+    "gui",
+    "plugin",
+    "dsh-plugin"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andykwokatgithub/dsh-desktop.git"
+  },
+  "bugs": {
+    "url": "https://github.com/andykwokatgithub/dsh-desktop/issues"
+  },
+  "homepage": "https://github.com/andykwokatgithub/dsh-desktop#readme"
+}
