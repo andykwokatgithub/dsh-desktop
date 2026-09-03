@@ -91,9 +91,11 @@ dsh plugin --profile web update          # DSH 插件途径(自动激活升到�
 
 机制要点(`@deepseek-ai/dsh-app-boot`):`dsh plugin` 在 profile 目录跑 `pnpm add/update`;
 匹配到的依赖若声明了 `dsh.bundle`,会加入 `dsh.profile.bundles`;**更新时会自动激活
-一个「在新版本才获得 `dsh.bundle` 声明」的包**。`postinstall`(`scripts/fetch-exe.mjs`)
-会按 `package.json` 的版本,从相应 GitHub Release 下载 `dsh-desktop-win-x64.exe`,并用
-同名 `.sha256` 校验后写到 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe`。
+一个「在新版本才获得 `dsh.bundle` 声明」的包**。自 0.2.2 起,预编译
+`dsh-desktop-win-x64.exe` 已**直接打进 npm 包**(`files`);自 0.2.3 起**没有 install 脚本**,
+`dsh-desktop` 启动器在**首次运行时**把内置 EXE 拷贝到
+`%LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe` 并启动(命令是 `dsh-desktop`,不带 `.exe`)。
+仅当二进制缺失(如 git 安装)才回退到 GitHub 下载并做 SHA256 校验。
 
 > **git 安装的一个坑**:通过 `dsh plugin add github:...` 安装时,pnpm 会禁止运行
 > 依赖的构建脚本,直到你在 profile 的 `pnpm-workspace.yaml` 的 `allowBuilds`

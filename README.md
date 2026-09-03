@@ -35,9 +35,12 @@
 `dsh-desktop-win-x64.exe`,双击即可。该 EXE 内置自更新:
 
 ```powershell
-.\dsh-desktop.exe -check-update   # 检查是否有新版本
-.\dsh-desktop.exe -update         # 下载并应用到自身,重启生效
+.\dsh-desktop.exe -check-update   # 检查是否有新版本(弹出原生提示框)
+.\dsh-desktop.exe -update         # 下载并应用,重启生效(弹出原生提示框)
 ```
+
+> 说明:该 EXE 是 **GUI 子系统(无控制台)**,所以上面命令的结果会通过**原生提示框**以及
+> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log` 展示,而不是打印在 PowerShell 里。
 
 ### 2. npm / `dsh plugin`(插件市场发现与一键管理)
 
@@ -62,8 +65,9 @@ dsh plugin --profile web update          # dsh 插件途径(会自动激活升�
 
 > 注:`dsh plugin add github:...` 会安装 git 源并运行包的脚本;pnpm 可能要求先在
 > profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 里放行本包,命令失败时按 pnpm
-> 的提示操作即可。npm 途径安装**无 install 脚本**:预编译 EXE 已打在内置包里,
-> 首次运行 `dsh-desktop` 时自动拷贝到 `%LOCALAPPDATA%\dsh-desktop\`,不联网。
+> 的提示操作即可。**npm 途径安装后,命令是 `dsh-desktop`(不带 `.exe`);没有
+> install 脚本**,预编译 EXE 已打在内置包里,首次运行 `dsh-desktop` 时自动拷贝到
+> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe`(不在 PATH)并启动,不联网。
 
 ### 3. 从源码构建(贡献者)
 
@@ -130,8 +134,15 @@ go run . -version   # -> dsh-desktop 1.2.3
 ## 运行
 
 ```powershell
+# 通过 npm / dsh plugin 安装后,命令是 dsh-desktop(不带 .exe):
+dsh-desktop
+
+# 直接使用从 GitHub 下载或本地构建的 EXE:
 .\dsh-desktop.exe
 ```
+
+> npm 安装后,真正的二进制在 `C:\Users\<你>\AppData\Local\dsh-desktop\dsh-desktop.exe`,并不在
+> PATH 上;`dsh-desktop` 命令会把它拷贝到位并启动。想直接双击/引用它,可用上面这个路径。
 
 命令行 flags(与配置面一致):`-url` `-host` `-port` `-command` `-stop-on-exit`
 `-devtools` `-context-menu` `-startup-timeout` `-poll-ms` `-width` `-height`

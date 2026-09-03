@@ -151,9 +151,25 @@ func messageBox(title, text string) {
 	_, _ = windows.MessageBox(0, tx, tt, mbOKIconError)
 }
 
+// notifyUpdate reports an update result to the user. It always writes to the
+// dsh-desktop log, prints to stdout (visible under `go run`), and shows a native
+// dialog (visible even though the GUI binary has no console).
+func notifyUpdate(title, text string, isError bool) {
+	_ = appendLog(title + ": " + text)
+	fmt.Printf("%s: %s\n", title, text)
+	flags := uint32(0x00000040) // MB_ICONINFORMATION
+	if isError {
+		flags = 0x00000010 // MB_ICONERROR
+	}
+	tt, _ := windows.UTF16PtrFromString(title)
+	tx, _ := windows.UTF16PtrFromString(text)
+	_, _ = windows.MessageBox(0, tx, tt, flags)
+}
+
 // runUpdateCmd resolves the latest GitHub release and, for -update, downloads
-// and applies it. It runs in CLI mode (no GUI); output goes to stdout and
-// failures are also recorded in the dsh-desktop log.
+// and applies it. It runs before the GUI window opens; results are shown via a
+// native dialog (and the log) so the user sees feedback even though the GUI
+// subsystem has no console.
 func runUpdateCmd(cfg *config.Config) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -161,37 +177,34 @@ func runUpdateCmd(cfg *config.Config) {
 	exeURL, sha, latest, err := update.Resolve(ctx, update.DefaultRepo, config.Version)
 	if err != nil {
 		if errors.Is(err, update.ErrNoNewer) {
-			fmt.Printf("dsh-desktop is up to date (current %s)\n", config.Version)
+			notifyUpdate("更新检查", fmt.Sprintf("dsh-desktop 已是最新版本 (%s)", config.Version), false)
 			return
 		}
-		_ = appendLog("update check failed: " + err.Error())
-		fmt.Printf("update check failed: %v\n", err)
+		notifyUpdate("更新检查失败", err.Error(), true)
 		return
 	}
 
-	fmt.Printf("dsh-desktop %s is available (current %s)\n", latest, config.Version)
+	notifyUpdate("发现新版本", fmt.Sprintf("dsh-desktop %s 可更新(当前 %s)", latest, config.Version), false)
 	if !cfg.Update {
 		return
 	}
 
 	exe, err := os.Executable()
 	if err != nil {
-		fmt.Printf("cannot resolve executable path: %v\n", err)
+		notifyUpdate("更新失败", "无法解析可执行文件路径: "+err.Error(), true)
 		return
 	}
 	target := filepath.Join(filepath.Dir(exe), "dsh-desktop.exe")
 	staged := target + ".new"
 
 	if err := update.Download(ctx, exeURL, sha, staged); err != nil {
-		_ = appendLog("update download failed: " + err.Error())
-		fmt.Printf("update download failed: %v\n", err)
+		notifyUpdate("更新下载失败", err.Error(), true)
 		return
 	}
-	fmt.Printf("downloaded and verified %s -> %s\n", latest, staged)
+	notifyUpdate("更新完成", fmt.Sprintf("已下载并校验 %s,正在应用后重启...", latest), false)
 
 	if err := applyUpdate(staged, target); err != nil {
-		_ = appendLog("update apply failed: " + err.Error())
-		fmt.Printf("update staged at \"%s\"; replace \"%s\" with it and restart.\n", staged, target)
+		notifyUpdate("更新未完成", fmt.Sprintf("已暂存到 \"%s\",请手动替换 \"%s\" 后重启。\n错误: %v", staged, target, err), true)
 		return
 	}
 }

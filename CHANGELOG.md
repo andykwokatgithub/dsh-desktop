@@ -5,6 +5,13 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [0.2.4] - 2026-09-03
+
+### Changed
+- **自更新命令的可见反馈**:`-check-update` / `-update` 的结果改由**原生提示框**展示
+  (因为该 EXE 是 GUI 子系统、无控制台,`fmt.Printf` 进不了 PowerShell),同时写入
+  `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`。
+
 ## [0.2.3] - 2026-09-03
 
 ### Changed
