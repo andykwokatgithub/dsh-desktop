@@ -5,6 +5,14 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [0.2.1] - 2026-09-03
+
+### Fixed
+- **npm 安装拉取 EXE**:`scripts/fetch-exe.mjs` 的 `readVersion()` 误用
+  `dirname(import.meta.url)`(URL 字符串)导致读不到 `package.json` 版本、回退成 `0.1.0`
+  并下载不存在的 `v0.1.0` 资产;已改用 `fileURLToPath` 正确解析包目录,并让下载源在
+  精确版本资产缺失时**回退到 latest release**。发布为 `0.2.1`。
+
 ## [0.2.0] - 2026-09-02
 
 ### Added
