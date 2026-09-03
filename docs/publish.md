@@ -40,8 +40,9 @@ DSH 插件( bundle )本质是一个 **npm 包**,它的 `package.json` 声明:
    > 说明:要真正在 Harness 里注册可点击启动桌面壳的命令/技能入口,需要用到基础
    > 应用配置里精确的入口 `id` 与 schema;这是**后续增强项**(见 §7),本版先用
    > 「合法但空」的 patch,避免对未知入口打补丁产生启动告警。
-4. **README 与元数据**:紧邻仓库的 `README.md` 已给出安装/更新命令、许可、topic
-   说明。`package.json` 的 `keywords`、`description`、`homepage` 也会被市场/搜索利用。
+4. **README 与元数据**:紧邻仓库的 `README.md` 已给出安装/更新命令、许可与商标说明,
+   并在「文档」一节链接到本发布指南(市场/发现细节以本文为准)。
+   `package.json` 的 `keywords`、`description`、`homepage` 也会被市场/搜索利用。
 5. **稳定的仓库名与 owner**:市场通常按 `owner/repo` 索引;发布前确认
    `github:andykwokatgithub/dsh-desktop` 或你的实际地址在文档里一致。
 

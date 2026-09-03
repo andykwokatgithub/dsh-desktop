@@ -5,6 +5,19 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [0.2.5] - 2026-09-03
+
+### Added
+- `docs/dsh-desktop-readme-prd.md`：README 需求基线（README PRD），按 GitHub README
+  最佳实践给出 README 重写的章节/结构/质量/验收要求。
+
+### Changed
+- 依 README PRD 重写 `README.md`：新增「演示」占位、「是什么/为什么/边界」、读者分层环境表、
+  配置表格（全量 flags + 默认值）、「贡献与安全」入口；将「发现与收录/topic」下沉到
+  `docs/publish.md`，用配置表替代平铺 flags。
+- `docs/publish.md` §1.4「README 与元数据」：同步 README 改动后的引用口径（README 不再含
+  topic 说明，市场/发现细节以 publish.md 为准）。
+
 ## [0.2.4] - 2026-09-03
 
 ### Changed

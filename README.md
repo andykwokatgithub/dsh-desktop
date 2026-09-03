@@ -1,8 +1,8 @@
 # dsh-desktop
 
-> DeepSeek Harness 的 Windows 桌面壳(Go + WebView2)——把 `dsh web` 的 Web UI
-> 装进原生窗口。作为一个 DSH 插件 bundle 发布,可在插件市场(dshmarket)被发现,
-> 并通过 `dsh plugin` 或 npm 一键安装、更新。
+> DeepSeek Harness(`dsh web`)的 **Windows 桌面壳**(Go + WebView2)——把 DSH Web UI 装进原生窗口,
+> 而不是丢进浏览器标签页。可作 DSH 插件 bundle 发布,在插件市场(dshmarket)被发现,通过
+> `dsh plugin` 或 npm 一键安装、更新。
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 [![Go](https://img.shields.io/badge/Go-1.21+-00ADD8?style=flat&logo=go)](go.mod)
@@ -12,22 +12,58 @@
 
 ---
 
-## 是什么
+## 演示
 
-`dsh-desktop` 是把 DeepSeek Harness(`dsh web`,默认 `http://127.0.0.1:3080`)
-装进 Windows 原生窗口的壳。它不承载任何 Harness 逻辑,只做:
+<!-- TODO: 请替换为真实运行截图(需要在能拉起 dsh web 的环境下截取 1-2 张,建议 1280px 宽)。
+     素材放 assets/,例如 assets/screenshot-main.png,并用相对路径引用。 -->
+> 占位:主窗口加载 DSH Web UI、加载态/错误态示意。
+
+---
+
+## 是什么 / 为什么
+
+`dsh-desktop` 是 `dsh web`(默认 `http://127.0.0.1:3080`)的**壳**,只做四件事:
 
 - **内嵌渲染**:WebView2 加载 DSH Web UI。
 - **服务生命周期**:探测并静默启动/复用/停止 `dsh web` 后端。
 - **单实例防重**:重复启动时激活已有窗口并退出。
 - **打包体验**:GUI 子系统(无控制台)+ DeepSeek 图标 + 加载/错误页。
 
-需求与设计见 `docs/dsh-desktop-prd.md`(V1.1)与
-`docs/dsh-desktop-technical-design.md`。
+**为什么值得用**:相比直接 `dsh web` 在浏览器开标签页,本壳给你一个独立的原生窗口、
+单实例(不会重复弹窗/堆积标签页)、默认复用已在跑的服务(二次启动更快),且无黑色控制台。
+
+**边界**:它**不承载任何 Harness 逻辑**——`/api` 的执行/读写库、workflow 等能力全部由 `dsh`
+负责,本壳只负责把 Web UI 包进 Windows 窗口。
+
+需求与设计见[产品 PRD](docs/dsh-desktop-prd.md)(V1.1)与[技术设计](docs/dsh-desktop-technical-design.md)。
 
 ---
 
-## 安装与更新(3 条路径)
+## 目录
+
+- [环境要求](#环境要求)
+- [安装与更新](#安装与更新)
+- [快速上手](#快速上手)
+- [配置](#配置)
+- [构建](#构建)
+- [目录结构](#目录结构)
+- [贡献与安全](#贡献与安全)
+- [许可与商标](#许可与商标)
+- [文档](#文档)
+
+---
+
+## 环境要求
+
+| 场景 | 需要什么 |
+| :-- | :-- |
+| **终端用户**(下载 EXE) | Windows 10 (1803+) / Windows 11;WebView2 Evergreen 运行时(Win11 预装,Win10 需装) |
+| **运行时**(任何场景) | 全局安装 `dsh`(`npm i -g @deepseek-ai/dsh`),且 `node`、`dsh` 均在 `PATH` |
+| **构建者**(从源码) | 额外需要 Go 1.21+(含 CGO)+ GCC/mingw-w64;重建图标时才需要 Node + `sharp` |
+
+---
+
+## 安装与更新
 
 ### 1. GitHub Releases 直接下载(终端用户推荐)
 
@@ -39,13 +75,13 @@
 .\dsh-desktop.exe -update         # 下载并应用,重启生效(弹出原生提示框)
 ```
 
-> 说明:该 EXE 是 **GUI 子系统(无控制台)**,所以上面命令的结果会通过**原生提示框**以及
-> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log` 展示,而不是打印在 PowerShell 里。
+> 说明:该 EXE 是 **GUI 子系统(无控制台)**,所以命令结果通过**原生提示框**以及
+> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log` 呈现,而不是打印在 PowerShell 里。
 
 ### 2. npm / `dsh plugin`(插件市场发现与一键管理)
 
-本项目是 DSH 插件 bundle(npm 包,`package.json` 声明了 `dsh.bundle`),因此可被
-插件市场(dshmarket 等)发现并一键安装:
+本项目是 DSH 插件 bundle(npm 包,`package.json` 声明了 `dsh.bundle`),可被插件市场
+(dshmarket 等)发现并一键安装:
 
 ```powershell
 # 通过 npm 全局安装
@@ -60,39 +96,64 @@ dsh plugin --profile web add github:andykwokatgithub/dsh-desktop
 
 ```powershell
 npm update -g @andykwok/dsh-desktop   # npm 途径
-dsh plugin --profile web update          # dsh 插件途径(会自动激活升到新版本的 bundle)
+dsh plugin --profile web update          # dsh 插件途径(自动激活升到新版本的 bundle)
 ```
 
-> 注:`dsh plugin add github:...` 会安装 git 源并运行包的脚本;pnpm 可能要求先在
-> profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 里放行本包,命令失败时按 pnpm
-> 的提示操作即可。**npm 途径安装后,命令是 `dsh-desktop`(不带 `.exe`);没有
-> install 脚本**,预编译 EXE 已打在内置包里,首次运行 `dsh-desktop` 时自动拷贝到
-> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe`(不在 PATH)并启动,不联网。
+> 注:`dsh plugin add github:...` 会安装 git 源并运行包的脚本;pnpm 可能要求先在 profile 的
+> `pnpm-workspace.yaml` 的 `allowBuilds` 里放行本包,命令失败时按 pnpm 提示操作即可。
+> **npm 途径安装后,命令是 `dsh-desktop`(不带 `.exe`)**,没有 install 脚本——预编译 EXE 已内置,
+> 首次运行 `dsh-desktop` 时自动拷贝到 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe`(不在 PATH)并启动,
+> 不联网。
 
 ### 3. 从源码构建(贡献者)
 
-见下文 [构建](#构建)。
+见[构建](#构建)。
 
 ---
 
-## 发现与收录(面向插件市场)
+## 快速上手
 
-要让 `dshmarket` 等市场收录本项目,请确保仓库:
+```powershell
+# 通过 npm / dsh plugin 安装后,命令是 dsh-desktop(不带 .exe):
+dsh-desktop
 
-1. 打上 GitHub topic **`dsh-plugin`**(以及可选的 `dsh-desktop`、`deepseek-harness`)。
-2. `package.json` 保留 **`"dsh": { "bundle": { "patch": "./cordis.patch.yml" } }`**
-   声明(市场据此校验可安装性)。
-3. 版本号与 Git tag 一致(`vX.Y.Z`),发版走 `.github/workflows/release.yml`
-   自动产出 EXE + `sha256` 校验文件并发布到 GitHub Release。
+# 直接使用从 GitHub 下载或本地构建的 EXE:
+.\dsh-desktop.exe
+```
+
+> npm 安装后,真正的二进制在 `C:\Users\<你>\AppData\Local\dsh-desktop\dsh-desktop.exe`,并不在
+> PATH 上;`dsh-desktop` 命令会把它拷贝到位并启动。想直接双击/引用它,可用上面这个路径。
+
+典型场景:
+
+- **冷启动**(服务未跑):自动 `dsh web --no-open` 拉起服务,先显示加载态,健康后再跳转 UI。
+- **热启动**(服务已在跑):健康校验通过后直接复用,快速进入(≤3s)。
+- **重复启动**(窗口已存在):激活已有窗口并置顶(即使最小化),新进程立即退出。
 
 ---
 
-## 环境要求
+## 配置
 
-- Windows 10 (1803+) / Windows 11。
-- WebView2 Evergreen 运行时(Windows 11 预装;Windows 10 需安装)。
-- `dsh` 全局安装(`npm i -g @deepseek-ai/dsh`),且 `node`、`dsh` 均在 `PATH`
-  (运行 dsh-desktop 时后端需要)。
+命令行 flags(`-url` `-host` `-port` `-command` `-stop-on-exit` `-devtools` `-context-menu`
+`-startup-timeout` `-poll-ms` `-width` `-height` `-title` `-version` `-check-update` `-update`):
+
+| Flag | 默认值 | 说明 |
+| :-- | :-- | :-- |
+| `-url` | `http://127.0.0.1:3080` | DSH Web UI 的规范本地地址 |
+| `-host` | `127.0.0.1` | 健康探测与 spawn 的绑定 host(禁用 `0.0.0.0`) |
+| `-port` | `3080` | `dsh web` 的监听端口 |
+| `-command` | `web` | 要 spawn 的 `dsh` 子命令(`web` = `--profile web` 别名) |
+| `-stop-on-exit` | `false` | 关闭窗口时是否同时停止 `dsh` 服务(默认保留,二次启动更快) |
+| `-devtools` | `false` | 开启 WebView2 开发者工具(安全默认:关闭) |
+| `-context-menu` | `false` | 保留 WebView2 默认右键菜单(安全默认:关闭) |
+| `-startup-timeout` | `30` | 等待服务就绪的超时(秒) |
+| `-poll-ms` | `500` | 健康校验轮询间隔(毫秒) |
+| `-width` | `1200` | 窗口宽度 |
+| `-height` | `800` | 窗口高度 |
+| `-title` | `DeepSeek Harness` | 窗口标题(仅用于显示;单实例定位不依赖标题) |
+| `-version` | `false` | 打印版本并退出 |
+| `-check-update` | `false` | 检查 GitHub Releases 是否有新版本并退出 |
+| `-update` | `false` | 下载并应用最新版本,然后退出 |
 
 ---
 
@@ -119,42 +180,15 @@ go run . -version   # -> dsh-desktop 1.2.3
 
 > **必须保留 `-H=windowsgui`**,否则生成的是 console 子系统,双击会弹黑色控制台。
 > `webview_go` 依赖 CGO,需要本机 Windows + GCC;不能跨平台交叉编译。
-> 运行 `dsh-desktop.exe` 会真的拉起 `dsh web`,不要在无 DSH 环境时盲目运行;验证请
-> 用 `go run . -version` 或单测。
+> 运行 `dsh-desktop.exe` 会真的拉起 `dsh web`,不要在无 DSH 环境时盲目运行;验证请用
+> `go run . -version` 或单测。
 
 ### 应用图标
 
 - `assets/deepseek.ico`(16–256px)、`assets/deepseek-256.png`。
 - `tools/make-icon.mjs` 用 `sharp` 从官方 SVG 重新生成 ICO。
-- `rsrc_windows_amd64.syso` 内嵌图标;`build.ps1` 在 ICO 更新时会自动用
+- `rsrc_windows_amd64.syso` 内嵌图标;`build.ps1` 在 ICO 更新时自动用
   `github.com/akavel/rsrc` 重建。
-
----
-
-## 运行
-
-```powershell
-# 通过 npm / dsh plugin 安装后,命令是 dsh-desktop(不带 .exe):
-dsh-desktop
-
-# 直接使用从 GitHub 下载或本地构建的 EXE:
-.\dsh-desktop.exe
-```
-
-> npm 安装后,真正的二进制在 `C:\Users\<你>\AppData\Local\dsh-desktop\dsh-desktop.exe`,并不在
-> PATH 上;`dsh-desktop` 命令会把它拷贝到位并启动。想直接双击/引用它,可用上面这个路径。
-
-命令行 flags(与配置面一致):`-url` `-host` `-port` `-command` `-stop-on-exit`
-`-devtools` `-context-menu` `-startup-timeout` `-poll-ms` `-width` `-height`
-`-title` `-version` `-check-update` `-update`。
-
----
-
-## 许可
-
-MIT License(详见 [LICENSE](LICENSE))。项目内置的 DeepSeek 鲸鱼图标及其品牌元素
-属于 DeepSeek 方所有,本许可**不**授予商标/Logo/品牌资产使用权,相关使用需另行取得
-品牌方许可。
 
 ---
 
@@ -181,8 +215,24 @@ docs/                           PRD + 技术设计 + 发布指南
 
 ---
 
+## 贡献与安全
+
+- **贡献**:环境要求、开发命令与提交约定见[`CONTRIBUTING.md`](CONTRIBUTING.md)。
+- **安全**:漏报私报方式、下载/更新校验与品牌资产关注点见[`SECURITY.md`](SECURITY.md)。
+- **变更日志**:见[`CHANGELOG.md`](CHANGELOG.md)(Keep a Changelog + 语义化版本)。
+
+---
+
+## 许可与商标
+
+MIT License(详见[`LICENSE`](LICENSE))。项目内置的 DeepSeek 鲸鱼图标及其品牌元素属于
+DeepSeek 方,本许可**不**授予商标/Logo/品牌资产使用权,相关使用需另行取得品牌方许可。
+
+---
+
 ## 文档
 
 - 需求基线:[`docs/dsh-desktop-prd.md`](docs/dsh-desktop-prd.md)
 - 技术设计:[`docs/dsh-desktop-technical-design.md`](docs/dsh-desktop-technical-design.md)
-- 发布/收录/安装/更新指南:[`docs/publish.md`](docs/publish.md)
+- 发布/收录/安装/更新指南(面向市场与维护者):[`docs/publish.md`](docs/publish.md)
+- README 自身的需求基线:[`docs/dsh-desktop-readme-prd.md`](docs/dsh-desktop-readme-prd.md)
