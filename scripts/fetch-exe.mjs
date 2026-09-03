@@ -1,19 +1,17 @@
 #!/usr/bin/env node
-// scripts/fetch-exe.mjs — download and verify the prebuilt dsh-desktop.exe
-// from the GitHub release for the package version (falling back to the latest
-// release when an exact tag/asset is missing).
+// scripts/fetch-exe.mjs — make the dsh-desktop.exe available locally for npm
+// users. Since 0.2.2 the prebuilt Windows binary is BUNDLED in the package, so
+// the normal path is a pure local copy (no network). If the binary is missing
+// (e.g. a git-hosted install that didn't carry it), we fall back to downloading
+// the release asset from GitHub with SHA256 verification.
 //
 // Used two ways:
 //   - as a postinstall script (npm i -g @andykwok/dsh-desktop / dsh plugin add)
 //   - as a module import, e.g. { fetchReleaseExe } from bin/dsh-desktop.mjs
-//
-// On success it writes the EXE to <dest> (default %LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe)
-// and verifies the SHA256 published alongside it. Fails loudly if the hash does
-// not match, so a tampered download is never left installed.
 
 import { createHash } from "node:crypto";
 import { createReadStream } from "node:fs";
-import { mkdir, rename, rm, writeFile } from "node:fs/promises";
+import { copyFile, mkdir, rename, rm, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -22,15 +20,18 @@ const REPO = "andykwokatgithub/dsh-desktop";
 const ASSET = "dsh-desktop-win-x64.exe";
 const SHA_ASSET = `${ASSET}.sha256`;
 
-async function readVersion() {
-  const here = dirname(fileURLToPath(import.meta.url));
+// Package root = scripts/ -> ..
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const pkgRoot = join(__dirname, "..");
+const bundled = join(pkgRoot, ASSET);
+
+const mustExist = async (p) => {
   try {
-    const pkg = JSON.parse(await readFile(join(here, "..", "package.json"), "utf8"));
-    return pkg.version ?? "0.0.0";
+    return (await stat(p)).isFile();
   } catch {
-    return "0.0.0";
+    return false;
   }
-}
+};
 
 async function sha256File(path) {
   const hash = createHash("sha256");
@@ -43,9 +44,24 @@ async function sha256File(path) {
   return hash.digest("hex");
 }
 
+// If the package ships the binary, copy it into place and report success.
+async function copyBundled(dest) {
+  try {
+    if (await mustExist(bundled)) {
+      await mkdir(dirname(dest), { recursive: true });
+      await copyFile(bundled, dest);
+      process.stdout.write(`[dsh-desktop] installed bundled ${dest}\n`);
+      return true;
+    }
+  } catch {
+    /* fall through to download */
+  }
+  return false;
+}
+
 async function releaseByTag(tag) {
   const res = await fetch(`https://api.github.com/repos/${REPO}/releases/tags/${tag}`, {
-    headers: { Accept: "application/vnd.github+json" },
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "dsh-desktop-installer" },
   });
   if (!res.ok) throw new Error(`no release ${tag}`);
   return res.json();
@@ -53,7 +69,7 @@ async function releaseByTag(tag) {
 
 async function latestRelease() {
   const res = await fetch(`https://api.github.com/repos/${REPO}/releases/latest`, {
-    headers: { Accept: "application/vnd.github+json" },
+    headers: { Accept: "application/vnd.github+json", "User-Agent": "dsh-desktop-installer" },
   });
   if (!res.ok) throw new Error(`no latest release (HTTP ${res.status})`);
   return res.json();
@@ -85,14 +101,30 @@ async function resolveAsset(version) {
 }
 
 export async function fetchReleaseExe({ version = null, dest = null } = {}) {
-  version = version ?? (await readVersion());
   const target = dest ?? join(process.env.LOCALAPPDATA ?? ".", "dsh-desktop", "dsh-desktop.exe");
+
+  // Preferred: copy the bundled binary (no network).
+  if (await copyBundled(target)) return target;
+
+  // Fallback: download from GitHub (with UA, so corporate proxies/CDN accept it)
+  // and verify SHA256.
+  if (version === null) {
+    try {
+      const pkg = JSON.parse(await readFile(join(pkgRoot, "package.json"), "utf8"));
+      version = pkg.version ?? "0.0.0";
+    } catch {
+      version = "0.0.0";
+    }
+  }
   await mkdir(dirname(target), { recursive: true });
 
   const { url, sha, tag } = await resolveAsset(version);
   const tmp = `${target}.download`;
 
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetch(url, {
+    redirect: "follow",
+    headers: { "User-Agent": "dsh-desktop-installer" },
+  });
   if (!res.ok || !res.body) throw new Error(`download failed (${res.status}) for ${url}`);
   const buf = Buffer.from(await res.arrayBuffer());
   await writeFile(tmp, buf);

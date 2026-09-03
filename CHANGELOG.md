@@ -5,6 +5,14 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [0.2.2] - 2026-09-03
+
+### Changed
+- **npm 包改为内置预编译 EXE**:`dsh-desktop-win-x64.exe`(约 14.6MB)直接打进
+  npm tarball(`files`),postinstall 只做**本地拷贝**,不再在安装时联网下载,从而规避
+  Node `fetch` 不走系统代理/TLS 限制导致的 `fetch failed`。`bin/dsh-desktop.mjs` 与
+  `scripts/fetch-exe.mjs` 均优先使用包内置二进制,缺失时才回退到 GitHub 下载(带 UA)。
+
 ## [0.2.1] - 2026-09-03
 
 ### Fixed

@@ -33,7 +33,7 @@ async function packageVersion() {
 function exePath() {
   const local = process.env.LOCALAPPDATA;
   if (local) return join(local, "dsh-desktop", "dsh-desktop.exe");
-  return join(__dirname, "dsh-desktop.exe");
+  return join(__dirname, "..", "dsh-desktop-win-x64.exe");
 }
 
 async function ensureExe() {
@@ -41,7 +41,8 @@ async function ensureExe() {
 
   if (existsSync(target)) return target;
 
-  const bundled = join(__dirname, "dsh-desktop.exe");
+  // Bundled binary lives at the package root (shipped since 0.2.2).
+  const bundled = join(__dirname, "..", "dsh-desktop-win-x64.exe");
   if (existsSync(bundled)) {
     mkdirSync(dirname(target), { recursive: true });
     await copyFile(bundled, target);

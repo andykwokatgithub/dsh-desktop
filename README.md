@@ -62,8 +62,8 @@ dsh plugin --profile web update          # dsh 插件途径(会自动激活升�
 
 > 注:`dsh plugin add github:...` 会安装 git 源并运行包的脚本;pnpm 可能要求先在
 > profile 的 `pnpm-workspace.yaml` 的 `allowBuilds` 里放行本包,命令失败时按 pnpm
-> 的提示操作即可。发布流水线也会以 `NPM_TOKEN` 把新版本推送到 npm(含预编译 EXE
-> 的下载与校验)。
+> 的提示操作即可。npm 途径的安装会把**预编译 EXE 一并内置**,postinstall 仅做本地拷贝、
+> 不联网;仅在二进制缺失时才回退到 GitHub 下载(带 UA 与 SHA256 校验)。
 
 ### 3. 从源码构建(贡献者)
 
