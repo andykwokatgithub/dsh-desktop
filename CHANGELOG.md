@@ -5,6 +5,14 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [0.2.3] - 2026-09-03
+
+### Changed
+- **移除 install 脚本**:不再有 `postinstall`,从而兼容开启了严格 `allow-scripts` 策略的
+  npm(例如默认拦截安装脚本,且 `--allow-scripts` 在部分 npm 版本有 bug)。EXE 已内置,
+  改为由 `bin/dsh-desktop.mjs` 启动器在**首次运行 `dsh-desktop` 时**从包内拷贝到
+  `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.exe`,零网络、零安装脚本。
+
 ## [0.2.2] - 2026-09-03
 
 ### Changed

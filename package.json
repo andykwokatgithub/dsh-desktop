@@ -1,7 +1,7 @@
 {
   "name": "@andykwok/dsh-desktop",
-  "version": "0.2.2",
-  "description": "A Go + WebView2 desktop shell for the DeepSeek Harness Web UI (dsh web). Prebuilt Windows x64 binary bundled in the package (no runtime download needed).",
+  "version": "0.2.3",
+  "description": "A Go + WebView2 desktop shell for the DeepSeek Harness Web UI (dsh web). Prebuilt Windows x64 binary bundled in the package; no install script and no runtime download needed.",
   "private": false,
   "publishConfig": {
     "access": "public"
@@ -24,8 +24,7 @@
     "README.md"
   ],
   "scripts": {
-    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1",
-    "postinstall": "node scripts/fetch-exe.mjs"
+    "build": "powershell -NoProfile -ExecutionPolicy Bypass -File build.ps1"
   },
   "engines": {
     "node": ">=18"
