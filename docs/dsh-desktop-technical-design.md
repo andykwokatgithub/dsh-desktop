@@ -149,17 +149,23 @@ func SignalExisting() (bool, error) {
 
 **健康校验（`internal/service/service.go`）**
 ```go
-func Healthy(addr string) bool {
-    // addr = "http://127.0.0.1:3080"
-    client := &http.Client{Timeout: 2 * time.Second}
-    resp, err := client.Get(addr + "/")
-    if err != nil { return false }
-    defer resp.Body.Close()
-    return resp.StatusCode == http.StatusOK && isDSH(resp) // isDSH: 校验响应体特征/头，确认是 dsh 前端
+func (b Behavior) Healthy() bool {
+    // dsh web 现在对根路径做浏览器认证：无 token、无 cookie 的裸 GET / 返回
+    // 401（"dsh web authentication required;…"），而非 200。
+    // 认 200 / 303（token→cookie 交换）为健康；认「401 且响应体带 dsh web 签名」也为健康。
+    // 端口可连但不回 dsh-web 信号 → 仍判为不健康（区分 dsh 在跑 / 其它进程占端口 / 僵死）。
+    resp, _ := client.Get("http://127.0.0.1:3080/")
+    switch resp.StatusCode {
+    case 200, 303: return true
+    case 401:      return strings.Contains(strings.ToLower(read(resp)), "dsh web")
+    }
+    return false
 }
 
 // 启动主流程：
 // 1) Healthy→复用；2) 端口可连但 !Healthy→陈旧/非dsh；3) 任一方"端口冲突"→报错不重启。
+// 复用路径直接 Navigate(cfg.URL)（WebView2 持久化浏览器 cookie 已授权）。
+// spawn 路径则用 WaitHealthy 返回的认证 URL（含启动 token）Navigate，触发 cookie 交换。
 ```
 
 **spawn（`internal/service/service.go`）**
@@ -173,7 +179,8 @@ func Spawn(ctx context.Context) (stdout io.Reader, err error) {
     cmd.SysProcAttr = &syscall.SysProcAttr{HideWindow: true, CreationFlags: CREATE_NO_WINDOW}
     return pipe, cmd.Start()
 }
-// 就绪判定：轮询 Healthy() 每 500ms，30s 超时；同时用 bufio 扫 stdout 的 "dsh web:" 行作为提前就绪信号。
+// 就绪判定：轮询 Healthy() 每 500ms，30s 超时；同时用 bufio 扫 stdout 的 "dsh web:" 行作为提前就绪信号，
+// 并从该行解析出含启动 token 的认证 URL（WaitHealthy 返回它，供冷启动 Navigate 触发 cookie 交换）。
 ```
 
 > 子进程归属：`dsh` 是 `cmd` 的子进程，`dsh` 再派生子进程。为了后续能按进程树清理，建议启动时记录 PID，并用 `taskkill /F /T /PID <pid>` 或 `TerminateProcess` + 作业对象（Job Object）治理整棵树。

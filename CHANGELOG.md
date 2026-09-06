@@ -5,6 +5,21 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [Unreleased]
+
+### Fixed
+- **服务就绪判定兼容 dsh web 的浏览器认证**:`dsh web` 现在用**每次进程随机生成的启动 token**对
+  Web UI 做浏览器认证(访问地址形如 `http://127.0.0.1:3080/?token=…`)。旧代码对根路径
+  `GET /` 只认 **HTTP 200**,而带认证的 dsh web 对无 token、无 cookie 的裸请求返回**401**
+  (`dsh web authentication required;…`),导致桌面壳误判为「端口被其它进程占用,无法启动
+  dsh」。现将健康校验改为**识别 dsh web 的认证边界**:200 / 303(token→cookie 交换)视为健康,
+  401 且响应体带 `dsh web` 签名时也视为健康,从而正确「复用」已在运行的 dsh 服务,而非误报端口冲突。
+- **冷启动导航到带 token 的认证地址**:服务由本壳 spawned 时,从子进程 stdout 的
+  `dsh web: <url>` 就绪行解析出**带启动 token 的认证 URL**,并让 WebView2 导航到该地址,从而完成
+  token→cookie 交换并展示真实 UI(而非 401 文案页)。冷却复用路径仍导航到 `cfg.URL`,由 WebView2
+  持久化 cookie(位于 `%APPDATA%\dsh-desktop.exe`)完成授权。
+- 新增 `internal/service/service_test.go`,对认证边界的健康判定与就绪行 URL 解析做单元测试。
+
 ## [0.2.5] - 2026-09-03
 
 ### Added

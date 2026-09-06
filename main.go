@@ -99,12 +99,20 @@ func main() {
 		// Wait on a background goroutine and hop back to the UI thread.
 		ctx := context.Background()
 		go func() {
-			if err := service.WaitHealthy(ctx, beh, svc); err != nil {
+			readyURL, err := service.WaitHealthy(ctx, beh, svc)
+			if err != nil {
 				_ = service.Stop(svc.PID())
 				view.Dispatch(func() { view.SetHtml(ui.Error) })
 				return
 			}
-			view.Dispatch(func() { view.Navigate(cfg.URL) })
+			target := cfg.URL
+			if readyURL != "" {
+				// The ready line carries the authenticated URL (the per-process
+				// launch token). Navigate there so WebView2 performs the token ->
+				// cookie exchange (dsh web browser auth), then shows the UI.
+				target = readyURL
+			}
+			view.Dispatch(func() { view.Navigate(target) })
 		}()
 	}
 

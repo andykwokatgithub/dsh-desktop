@@ -2,9 +2,13 @@
 // lifecycle (persist-or-stop) semantics.
 //
 // Design notes (PRD V1.1):
-//   - D4: readiness is a "port + HTTP 200" health check, not just a TCP dial.
+//   - D4: readiness is a port + HTTP health check, not just a TCP dial. dsh web
+//     now gates the UI behind browser auth, so a bare GET `/` answers with a
+//     distinctive 401; the health check treats that dsh-web-auth response (and
+//     200 / 303) as "up", still rejecting a foreign or stale port occupant.
 //   - D5: readiness is confirmed by polling the health check, optionally
-//     assisted by the `dsh web: <url>` line on the child's stdout.
+//     assisted by the `dsh web: <url>` line on the child's stdout (which also
+//     carries the authenticated URL with the process launch token).
 //   - D6: on Windows the global `dsh` is an npm .cmd/.ps1 shim, so it is
 //     spawned through `cmd /c` so PATHEXT resolution applies, and the child
 //     inherits PATH/DSH_HOME.
@@ -12,6 +16,7 @@ package service
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"fmt"
 	"io"
@@ -20,6 +25,8 @@ import (
 	"os"
 	"os/exec"
 	"strconv"
+	"strings"
+	"sync"
 	"syscall"
 	"time"
 )
@@ -34,8 +41,16 @@ type Behavior struct {
 	PollInterval   time.Duration
 }
 
-// Healthy reports whether the dsh web service answers this origin with HTTP 200.
-// A port that is open but does not answer 200 (or is not dsh) returns false.
+// Healthy reports whether a dsh web service is up and answering this origin.
+//
+// dsh web now gates its UI behind a per-process launch token (browser auth). A
+// bare GET to `/` with no token and no browser cookie is answered by the auth
+// boundary with a distinctive 401 — "dsh web authentication required; …" —
+// instead of HTTP 200. That 401, like a 200 (valid cookie / auth off) or a 303
+// (token->cookie exchange), proves the dsh web process is alive and responsive,
+// so it counts as healthy. A port that is open but does not answer with a
+// dsh-web signal still returns false, preserving the D4 distinction between a
+// running dsh service and a foreign/stale occupant of the port.
 func (b Behavior) Healthy() bool {
 	u := fmt.Sprintf("http://%s:%d/", b.Host, b.Port)
 	client := &http.Client{Timeout: 2 * time.Second}
@@ -44,7 +59,17 @@ func (b Behavior) Healthy() bool {
 		return false
 	}
 	defer resp.Body.Close()
-	return resp.StatusCode == http.StatusOK
+	switch resp.StatusCode {
+	case http.StatusOK, http.StatusSeeOther:
+		// Served (cookie present / auth off) or token->cookie redirect.
+		return true
+	case http.StatusUnauthorized:
+		// Confirm it is dsh web's auth boundary rather than an arbitrary 401:
+		// the auth-fence body is "dsh web authentication required; …".
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 256))
+		return bytes.Contains(bytes.ToLower(body), []byte("dsh web"))
+	}
+	return false
 }
 
 // PortOpen reports only whether something is listening on the port. Used to
@@ -58,10 +83,13 @@ func (b Behavior) PortOpen() bool {
 	return true
 }
 
-// Cmd bundles an in-flight spawned dsh process and its stdout pipe.
+// Cmd bundles an in-flight spawned dsh process, its stdout pipe, and the
+// authenticated URL (with the process launch token) read from its ready line.
 type Cmd struct {
-	proc   *exec.Cmd
-	stdout io.ReadCloser
+	proc     *exec.Cmd
+	stdout   io.ReadCloser
+	mu       sync.Mutex
+	readyURL string
 }
 
 // PID returns the process id of the spawned `cmd` wrapper.
@@ -69,6 +97,23 @@ func (c *Cmd) PID() int { return c.proc.Process.Pid }
 
 // Stdout exposes the child's stdout, used to detect the `dsh web: <url>` line.
 func (c *Cmd) Stdout() io.Reader { return c.stdout }
+
+// setReadyURL records the authenticated URL from the child's ready line.
+func (c *Cmd) setReadyURL(u string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if u != "" {
+		c.readyURL = u
+	}
+}
+
+// ReadyURL returns the authenticated URL (with the launch token) advertised on
+// the child's `dsh web: <url>` ready line, or "" until that line is seen.
+func (c *Cmd) ReadyURL() string {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	return c.readyURL
+}
 
 // Spawn starts `dsh web --no-open` through `cmd /c`. The returned Cmd owns the
 // process tree; call Stop to terminate it.
@@ -93,14 +138,20 @@ func Spawn(ctx context.Context, b Behavior) (*Cmd, error) {
 
 // WaitHealthy polls the health check until the service is ready or the timeout
 // elapses. It also consumes the child's stdout looking for the ready line.
-func WaitHealthy(ctx context.Context, b Behavior, c *Cmd) error {
+//
+// When the service was spawned by the caller (c != nil) it returns the
+// authenticated URL — the one with the process launch token — advertised on the
+// `dsh web: <url>` ready line, so the caller can bootstrap the WebView browser
+// cookie by navigating there. It returns "" when no Cmd was supplied (the reuse
+// path, where the WebView's persisted browser cookie already authorizes it).
+func WaitHealthy(ctx context.Context, b Behavior, c *Cmd) (string, error) {
 	ctx, cancel := context.WithTimeout(ctx, b.StartupTimeout)
 	defer cancel()
 
 	// Optionally watch the child stdout for a readiness announcement.
 	readyLine := make(chan struct{}, 1)
 	if c != nil {
-		go watchReadyLine(c.stdout, readyLine)
+		go watchReadyLine(c.stdout, c, readyLine)
 	}
 
 	ticker := time.NewTicker(b.PollInterval)
@@ -109,15 +160,24 @@ func WaitHealthy(ctx context.Context, b Behavior, c *Cmd) error {
 	for {
 		select {
 		case <-ctx.Done():
-			return fmt.Errorf("service not healthy within %s: %w", b.StartupTimeout, ctx.Err())
+			return "", fmt.Errorf("service not healthy within %s: %w", b.StartupTimeout, ctx.Err())
 		case <-readyLine:
-			// The dsh web URL line appeared; still confirm via health check.
-			if b.Healthy() {
-				return nil
+			// A ready-adjacent line appeared; if the auth-aware health check also
+			// passes we have the token URL to navigate the WebView to.
+			if c != nil && c.ReadyURL() != "" && b.Healthy() {
+				return c.ReadyURL(), nil
 			}
 		case <-ticker.C:
 			if b.Healthy() {
-				return nil
+				if c == nil {
+					return "", nil
+				}
+				if u := c.ReadyURL(); u != "" {
+					return u, nil
+				}
+				// Healthy but the dsh web: <url> line has not been printed yet.
+				// Keep polling for it (printUrl is always on, so it arrives
+				// shortly after the auth boundary comes up).
 			}
 		}
 	}
@@ -136,15 +196,34 @@ func Stop(pid int) error {
 	return nil
 }
 
-func watchReadyLine(r io.Reader, ch chan<- struct{}) {
+func watchReadyLine(r io.Reader, c *Cmd, ch chan<- struct{}) {
 	sc := bufio.NewScanner(r)
 	for sc.Scan() {
 		line := sc.Text()
-		if len(line) >= 7 && line[:7] == "dsh web" {
+		if strings.HasPrefix(line, "dsh web") {
+			if c != nil {
+				c.setReadyURL(urlFromReadyLine(line))
+			}
 			select {
 			case ch <- struct{}{}:
 			default:
 			}
 		}
 	}
+}
+
+// urlFromReadyLine extracts the authenticated URL from the child's ready line,
+// e.g. "dsh web: http://127.0.0.1:3080/?token=… (LAN: http://…)". It returns the
+// URL (carrying the process launch token) or "" when the line is not in the
+// expected form.
+func urlFromReadyLine(line string) string {
+	s := strings.TrimPrefix(line, "dsh web")
+	s = strings.TrimLeft(s, " :")
+	if i := strings.IndexByte(s, ' '); i >= 0 {
+		s = s[:i]
+	}
+	if !strings.HasPrefix(s, "http://") {
+		return ""
+	}
+	return s
 }
