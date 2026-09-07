@@ -95,7 +95,7 @@
 
 ### 3.5 安装与更新（必填）
 三种通道各一节，覆盖“终端用户 / npm+plugin / 源码”：
-1. **GitHub Releases**：下载 `dsh-desktop-win-x64.exe`；`-check-update` / `-update` 自更新；注明“GUI 子系统无控制台，结果以原生弹窗 + 日志呈现”。
+1. **GitHub Releases**：下载 `dsh-desktop-win-x64.exe`；`--check-update` / `--update` 自更新；注明“这两个命令是纯 CLI 命令，结果直接输出到控制台（stdout/stderr），并写入日志”。
 2. **npm / `dsh plugin`**：`npm i -g @andykwok/dsh-desktop` 与 `dsh plugin --profile web add github:andykwokatgithub/dsh-desktop`；`npm update -g ...` / `dsh plugin ... update`；说明命令是 `dsh-desktop`（不带 `.exe`）、无 install 脚本、首次运行拷贝到 `%LOCALAPPDATA%`。
 3. **从源码构建**：链到 §构建。
 
@@ -110,9 +110,9 @@
 - **配置表（新增，替代平铺 flags）**：`flag / 默认值 / 说明`，逐行列出 `internal/config` 中的全部项（url/host/port/command/stop-on-exit/devtools/context-menu/startup-timeout/poll-ms/width/height/title/version/check-update/update）。
 
 ### 3.8 构建（贡献者，必填）
-- `.\build.ps1`；等价 `go build -ldflags "-H=windowsgui" -o dsh-desktop.exe .`。
+- `.\build.ps1`；等价 `go build -o dsh-desktop.exe .`（默认 console 子系统,无需 `-H=windowsgui`）。
 - `-Version X.Y.Z` 注入；`go run . -version` 验证。
-- 保留 **CGO / `-H=windowsgui` / 不要盲目运行** 三条注意事项。
+- 保留 **CGO / console 子系统(GUI 隐藏控制台) / 不要盲目运行** 三条注意事项。
 - 图标管线：`assets/deepseek.ico` → `rsrc` → `.syso`。
 
 ### 3.9 目录结构（选填，保留并精简）

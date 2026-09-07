@@ -7,6 +7,46 @@
 
 ## [Unreleased]
 
+## [0.2.7] - 2026-09-07
+
+### Changed
+- **`--context-menu` 默认开启**:`ContextMenu` 默认值由 `false` 改为 `true`,即默认保留 WebView2 右键菜单
+  (此前 D7 安全默认关闭);如需禁用可传 `--context-menu=false`。
+- **修正版本号默认值**:`internal/config.Version` 默认值从遗留的 `0.1.0` 更新为当前发布版 `0.2.7`(与
+  `package.json` 及 `[0.2.7]` 条目一致),避免 dev 构建误报旧版本、把已发布版本当成"可更新"。
+- **`--update` 更新后不再自动拉起窗体**:`applyUpdate` 不再 `start "" target` 自动重启,改为更新
+  完成即退出(纯 CLI,与帮助文案"下载并应用最新版本,然后退出"一致);用户需重新运行 dsh-desktop
+  以使用新版本。
+- **统一参数用法为双横杠**:CLI 参数的规范写法统一为 `--flag`(如 `--check-update`/`--port`),
+  `--help` 也按双横杠输出用法;为兼容旧用法,`flag` 包仍接受单横杠 `-flag` 输入。
+- **自更新命令改为控制台输出**:`--check-update` / `--update` 的结果不再弹出**原生提示框**,
+  而是直接输出到**控制台**(信息走 stdout、错误走 stderr),同时保留写入
+  `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`。这两个命令是纯 CLI 命令,在打开 GUI
+  窗口前执行并退出,因此改为文本输出以便终端用户与脚本读取。
+- **改为控制台子系统构建(替代 GUI 子系统)**:`build.ps1` 不再用 `-H=windowsgui`,EXE 以
+  **console 子系统**构建,使 `--version`/`--check-update`/`--update` 在 PowerShell/cmd 中像
+  普通命令一样**同步等待并内联输出**(不再有"无输出"或"按任意键"的副作用)。GUI 启动时新增
+  `main.hideConsole()`:`GetConsoleProcessList` 判断该控制台是否为**本进程独有**(双击产生),
+  是则 `ShowWindow(SW_HIDE)` 隐藏控制台窗口,避免黑框;若为复用父终端控制台则不动它。
+  (注:从已有终端启动 GUI 时,PowerShell 会阻塞直到窗体关闭,或激活现有实例后快速退出。)
+- **规范参数传递**:统一 CLI 参数的流向与校验。
+  - **统一端点来源**:以 `--host`/`--port` 为唯一事实来源,页面地址自动派生(`CanonicalURL`);
+    `--url` 改为**可选显式覆盖**,设置时必须与 `--host`/`--port` 一致,否则报错(修复了「改 `--port`
+    后 WebView 仍导航到旧地址」的隐患)。
+  - **清理失效字段**:删除 `service.Behavior.URL` 与 `singleinstance.WindowOptions.URL`(及其
+    `window.go` 里永不触发的导航分支),把页面导航收敛到 `main.go` 一处。
+  - **集中单位换算**:`Config` 新增 `StartupTimeoutDuration()`/`PollIntervalDuration()`,把
+    `main.go` 里分散的 `time.Duration(...)` 换算收拢;`StartupTimeout` 字段更名为
+    `StartupTimeoutSec` 以显式表达单位。
+  - **统一命名**:`WindowOptions.Debug` 更名为 `WindowOptions.DevTools`,与 `--devtools` 保持一致。
+  - **增加输入校验**:`config.Parse` 对 `--port`(1-65535)、`--width`/`--height`(>0)、
+    `--startup-timeout`(>0)、`--poll-ms`(>0)、`--host`(非空)与 `--url`(与 host/port 一致)做
+    语义校验,值非法即报错退出。
+  - **配错呈现**:参数/配置错误在 **CLI 命令**(`--version`/`--check-update`/`--update`)下输出到
+    **控制台**,在 **GUI 启动**下保留**原生对话框**(无控制台,需可见错误)。
+- **新增 `internal/config/config_test.go`**:覆盖默认值、`CanonicalURL`/`PageURL`/时长换算与
+  参数校验(`validate`),含 `--url` 一致性校验与单/双横杠兼容用例。
+
 ## [0.2.6] - 2026-09-06
 
 ### Fixed

@@ -11,12 +11,11 @@ import (
 
 // WindowOptions configures the shell window and its embedded WebView2 view.
 type WindowOptions struct {
-	Title   string
-	Width   int
-	Height  int
-	Debug   bool // expose WebView2 devtools (default off per D7)
-	URL     string
-	OnClose func()
+	Title    string
+	Width    int
+	Height   int
+	DevTools bool // expose WebView2 devtools (default off per D7)
+	OnClose  func()
 }
 
 // Window is the native shell window that hosts the WebView2 content.
@@ -92,13 +91,10 @@ func newWindow(opts WindowOptions) (webview.WebView, *Window, error) {
 	showWindow(hwnd, swShow)
 
 	// Embed a WebView2 view into our own window (D3: we own the window class).
-	view := webview.NewWindow(opts.Debug, unsafe.Pointer(hwnd))
+	view := webview.NewWindow(opts.DevTools, unsafe.Pointer(hwnd))
 	win.view = view
 	view.SetTitle(opts.Title)
 	view.SetSize(opts.Width, opts.Height, webview.HintNone)
-	if opts.URL != "" {
-		view.Navigate(opts.URL)
-	}
 	return view, win, nil
 }
 

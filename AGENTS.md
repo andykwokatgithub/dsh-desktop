@@ -9,7 +9,7 @@
 - **内嵌渲染**:WebView2 加载 DSH Web UI(通过 `github.com/webview/webview_go`)。
 - **服务生命周期**:探测并静默启动/复用/停止 `dsh web` 后端。
 - **单实例防重**:重复启动时激活已有窗口并退出。
-- **打包体验**:GUI 子系统(无控制台)+ DeepSeek 图标 + 加载/错误页。
+- **打包体验**:console 子系统构建(GUI 启动时隐藏控制台)+ DeepSeek 图标 + 加载/错误页。
 
 需求与实现约束见 `docs/dsh-desktop-prd.md`(V1.1)与 `docs/dsh-desktop-technical-design.md`。
 
@@ -27,20 +27,22 @@
 ## 3. 构建 / 运行 / 验证
 
 ```powershell
-# 推荐:自动处理 .syso 资源 + GUI 构建
+# 推荐:自动处理 .syso 资源 + 构建(console 子系统,默认)
 .\build.ps1
 
 # 等价手写
-go build -ldflags "-H=windowsgui" -o dsh-desktop.exe .
+go build -o dsh-desktop.exe .
 
-# 看版本(go run 默认 console 子系统,可见 stdout)
-go run . -version        # -> dsh-desktop 0.1.0
+# 看版本
+go run . -version        # -> dsh-desktop 0.2.7
 
 # 静态检查
 go vet ./...
 ```
 
-- `-H=windowsgui` 是**必须的**:否则 exe 是 console 子系统,双击会弹黑色控制台。
+- 构建默认是 **console 子系统**(不再用 `-H=windowsgui`),这样 `--version`/`--check-update`/`--update`
+  在 PowerShell/cmd 中会**同步等待并内联输出**。GUI 启动时由 `main.hideConsole()` 隐藏双击产生的控制台窗口
+  (有极短黑框闪现);从已有终端启动 GUI 会复用该终端控制台,PowerShell 会阻塞直到窗体关闭。
 - 运行 `.\dsh-desktop.exe` 会**真的拉起 `dsh web` 后台服务**(对端口 3080 探测/启动)。在没有 DSH 环境或不想污染当前环境时,不要盲目跑;**验证请优先用 `go run . -version` 或单元测试**。
 - 修改 `internal/*` 后重建即可;修改图标需重新生成 `.ico`→`.syso`(见 §5)。
 
@@ -73,15 +75,15 @@ CHANGELOG.md                       变更日志(Keep a Changelog)
 
 ## 6. 已知坑 / 注意点
 
-- **`go vet` 有 1 处已知假阳性**:`internal/singleinstance/window.go:95` 的 `webview.NewWindow(debug, unsafe.Pointer(hwnd))` 是把窗口句柄(整数)转指针,安全,但被 vet 标记 `possible misuse of unsafe.Pointer`。**不要为了消掉它而重构出 bug。**
+- **`go vet` 有 1 处已知假阳性**:`internal/singleinstance/window.go:94` 的 `webview.NewWindow(debug, unsafe.Pointer(hwnd))` 是把窗口句柄(整数)转指针,安全,但被 vet 标记 `possible misuse of unsafe.Pointer`。**不要为了消掉它而重构出 bug。**
 - **`*.exe~` 备份文件**:Go 在 Windows 上 `-o` 输出会生成 `dsh-desktop.exe~` 等临时/备份文件;`.gitignore` 已含 `*.exe~` 与 `*~`。若提交前发现被暂存,`git rm --cached` 并删除即可。
-- **GUI 子系统没有可见 stderr**:所以 `main.go` 的致命错误统一走 `messageBox` + 写入 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`。给用户看的错误别只写 `os.Stderr`。
-- **`-version` 在 GUI exe 下 stdout 不一定可见**(无控制台);脚本/CI 用重定向或 `go run . -version` 最可靠。
+- **GUI 启动时控制台被隐藏**:console 子系统构建下,GUI 启动会 `ShowWindow(SW_HIDE)` 隐藏自身控制台窗口,此时 `os.Stderr` 对双击用户不可见;所以 `main.go` 的致命错误统一走 `messageBox` + 写入 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`。给用户看的错误别只写 `os.Stderr`。
+- **CLI 命令走控制台,`fatal` 走对话框**:`--version`/`--check-update`/`--update` 及其配置错误输出到控制台(stdout/stderr);GUI 启动路径的致命错误用 `messageBox`。区分看 `main.go` 的 `reportConfigError`/`fatal`。
 - **CGO 不能交叉编译**,`webview_go` 需要本机 Windows + GCC。
 
 ## 7. 约定
 
-- 版本:`internal/config.Version`(默认 `0.1.0`),发布时用 `-ldflags -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=<ver>` 覆盖,并同步更新 `CHANGELOG.md` 与打 Git tag(如 `v0.1.0`)。
+- 版本:`internal/config.Version`(默认 `0.2.7`,与 `package.json` 及 CHANGELOG 当前发布版一致),发布时用 `-ldflags -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=<ver>` 覆盖,并同步更新 `CHANGELOG.md`、`package.json` 与打 Git tag(如 `v0.2.7`)。
 - 变更日志:凡是影响行为的变更,同步更新 `CHANGELOG.md`(先写 `[Unreleased]`,发布时移入版本)。
 - 语言/注释:代码注释与文档以中文为主,与现有仓库一致。
 - 不要提交 `dsh-desktop.exe`、`.gopath/`、`dsh-desktop.exe~`。

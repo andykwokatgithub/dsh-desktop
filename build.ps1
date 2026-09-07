@@ -1,5 +1,9 @@
-# Build dsh-desktop.exe as a Windows GUI-subsystem app (no console window),
-# embedding the DeepSeek Harness icon.
+# Build dsh-desktop.exe as a Windows console-subsystem binary (default Go output
+# without -H=windowsgui), so CLI commands (--version / --check-update / --update)
+# behave as console commands in PowerShell (PowerShell waits for and captures
+# their output). The console window is hidden at runtime for a GUI launch (see
+# main.hideConsole), and the DeepSeek Harness icon is embedded via the resource
+# object. On double-click there is a brief, immediately-hidden console flash.
 # Requires Go with CGO + a GCC toolchain (e.g. mingw-w64) on PATH, and (only to
 # regenerate the icon resources) Node with sharp.
 param(
@@ -31,12 +35,16 @@ if ($needSyso) {
     if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 }
 
-Write-Host "==> go build (GUI subsystem + icon)"
-$ldflags = "-H=windowsgui"
+Write-Host "==> go build (console subsystem + icon)"
+$ldflags = ""
 if ($Version -ne "") {
-    $ldflags += " -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=$Version"
+    $ldflags = "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=$Version"
 }
-go build -ldflags $ldflags -o $out .
+if ($ldflags -ne "") {
+    go build -ldflags $ldflags -o $out .
+} else {
+    go build -o $out .
+}
 if ($LASTEXITCODE -eq 0) {
     Write-Host "Built $out"
 }

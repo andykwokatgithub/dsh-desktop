@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"os"
 	"os/exec"
@@ -14,6 +15,7 @@ import (
 	"runtime"
 	"syscall"
 	"time"
+	"unsafe"
 
 	"github.com/deepseek-ai/dsh-desktop/internal/config"
 	"github.com/deepseek-ai/dsh-desktop/internal/service"
@@ -28,9 +30,22 @@ func main() {
 	// webview_go requires the window and message loop on a locked OS thread.
 	runtime.LockOSThread()
 
+	// CLI commands (--version / --check-update / --update) bypass the GUI. The
+	// binary is a console-subsystem build so PowerShell waits for and captures
+	// their output as it does any console command. For a GUI launch (no CLI
+	// command), swallow the console window that the console-subsystem build
+	// otherwise creates on double-click.
+	cli := isCLICommand(os.Args[1:])
+	if !cli {
+		hideConsole()
+	}
+
 	cfg, err := config.Parse(os.Args[1:])
 	if err != nil {
-		fatal(2, "配置错误", err.Error())
+		if errors.Is(err, flag.ErrHelp) {
+			os.Exit(0) // usage already printed by the flag package
+		}
+		reportConfigError(cli, err)
 	}
 	if cfg.ShowVersion {
 		fmt.Printf("dsh-desktop %s\n", config.Version)
@@ -38,7 +53,7 @@ func main() {
 	}
 
 	// Update path: handled as a plain CLI command before the GUI/single-instance
-	// path, so -check-update / -update never open a window.
+	// path, so --check-update / --update never open a window.
 	if cfg.CheckUpdate || cfg.Update {
 		runUpdateCmd(cfg)
 		os.Exit(0)
@@ -56,12 +71,11 @@ func main() {
 
 	// FR-01/FR-04: ensure the dsh web service is (or becomes) healthy.
 	beh := service.Behavior{
-		URL:            cfg.URL,
 		Host:           cfg.Host,
 		Port:           cfg.Port,
 		Command:        cfg.Command,
-		StartupTimeout: time.Duration(cfg.StartupTimeout) * time.Second,
-		PollInterval:   time.Duration(cfg.PollIntervalMS) * time.Millisecond,
+		StartupTimeout: cfg.StartupTimeoutDuration(),
+		PollInterval:   cfg.PollIntervalDuration(),
 	}
 
 	var svc *service.Cmd
@@ -80,10 +94,10 @@ func main() {
 	// FR-02: create the native window and embed WebView2, starting on the
 	// loading page so the window appears within the cold-start budget.
 	view, _, err := singleinstance.NewWindow(singleinstance.WindowOptions{
-		Title:  cfg.WindowTitle,
-		Width:  cfg.WindowWidth,
-		Height: cfg.WindowHeight,
-		Debug:  cfg.DevTools,
+		Title:    cfg.WindowTitle,
+		Width:    cfg.WindowWidth,
+		Height:   cfg.WindowHeight,
+		DevTools: cfg.DevTools,
 	})
 	if err != nil {
 		fatal(1, "窗口创建失败", err.Error())
@@ -94,7 +108,7 @@ func main() {
 
 	if svc == nil {
 		// Service was already running and healthy; go straight to the UI.
-		view.Navigate(cfg.URL)
+		view.Navigate(cfg.PageURL())
 	} else {
 		// Wait on a background goroutine and hop back to the UI thread.
 		ctx := context.Background()
@@ -105,7 +119,7 @@ func main() {
 				view.Dispatch(func() { view.SetHtml(ui.Error) })
 				return
 			}
-			target := cfg.URL
+			target := cfg.PageURL()
 			if readyURL != "" {
 				// The ready line carries the authenticated URL (the per-process
 				// launch token). Navigate there so WebView2 performs the token ->
@@ -125,6 +139,60 @@ func main() {
 		_ = service.Stop(svc.PID())
 	}
 	os.Exit(0)
+}
+
+// reportConfigError presents a configuration/parameter error according to how
+// the process was invoked. Console CLI commands (--version / --check-update /
+// --update) print the error to stderr and exit; the GUI launch path shows the
+// native dialog (there is no console) via fatal.
+func reportConfigError(cli bool, err error) {
+	if cli {
+		_ = appendLog("配置错误: " + err.Error())
+		fmt.Fprintf(os.Stderr, "配置错误: %s\n", err.Error())
+		os.Exit(2)
+	}
+	fatal(2, "配置错误", err.Error())
+}
+
+// isCLICommand reports whether the invocation is one of the console CLI
+// commands, whose output and errors go to the console rather than a dialog.
+func isCLICommand(args []string) bool {
+	for _, a := range args {
+		switch a {
+		case "-version", "--version",
+			"-check-update", "--check-update",
+			"-update", "--update":
+			return true
+		}
+	}
+	return false
+}
+
+// hideConsole hides the console window that a console-subsystem build gets on
+// double-click, so a GUI launch does not flash a black console. It only hides
+// the console when it is this process's own dedicated console (launched by the
+// shell/explorer with no parent console); when the process was started from an
+// existing terminal and shares its console, the console is left alone so the
+// parent's terminal window is not hidden.
+func hideConsole() {
+	procGetConsoleWindow := syscall.NewLazyDLL("kernel32.dll").NewProc("GetConsoleWindow")
+	procGetConsoleProcessList := syscall.NewLazyDLL("kernel32.dll").NewProc("GetConsoleProcessList")
+	procShowWindow := syscall.NewLazyDLL("user32.dll").NewProc("ShowWindow")
+	const swHide = 0
+
+	hwnd, _, _ := procGetConsoleWindow.Call()
+	if hwnd == 0 {
+		return // no console window at all
+	}
+
+	// Count processes attached to this console. >1 means the console is shared
+	// with a parent terminal (started from PowerShell/cmd) so we must not hide
+	// it; ==1 means it is our own dedicated console window.
+	var pids [32]uint32
+	n, _, _ := procGetConsoleProcessList.Call(uintptr(unsafe.Pointer(&pids[0])), uintptr(len(pids)))
+	if n <= 1 {
+		procShowWindow.Call(hwnd, swHide)
+	}
 }
 
 // fatal logs to a file, shows a native error dialog, and exits. The process is
@@ -159,25 +227,22 @@ func messageBox(title, text string) {
 	_, _ = windows.MessageBox(0, tx, tt, mbOKIconError)
 }
 
-// notifyUpdate reports an update result to the user. It always writes to the
-// dsh-desktop log, prints to stdout (visible under `go run`), and shows a native
-// dialog (visible even though the GUI binary has no console).
+// notifyUpdate reports an update result directly to the console (stdout for
+// info, stderr for errors) and to the dsh-desktop log. The --update /
+// --check-update commands run as plain CLI commands before any window opens, so
+// results print to the console instead of a native dialog.
 func notifyUpdate(title, text string, isError bool) {
 	_ = appendLog(title + ": " + text)
-	fmt.Printf("%s: %s\n", title, text)
-	flags := uint32(0x00000040) // MB_ICONINFORMATION
 	if isError {
-		flags = 0x00000010 // MB_ICONERROR
+		fmt.Fprintf(os.Stderr, "%s: %s\n", title, text)
+		return
 	}
-	tt, _ := windows.UTF16PtrFromString(title)
-	tx, _ := windows.UTF16PtrFromString(text)
-	_, _ = windows.MessageBox(0, tx, tt, flags)
+	fmt.Printf("%s: %s\n", title, text)
 }
 
-// runUpdateCmd resolves the latest GitHub release and, for -update, downloads
-// and applies it. It runs before the GUI window opens; results are shown via a
-// native dialog (and the log) so the user sees feedback even though the GUI
-// subsystem has no console.
+// runUpdateCmd resolves the latest GitHub release and, for --update, downloads
+// and applies it. It runs before the GUI window opens, printing results directly
+// to the console (see notifyUpdate) rather than showing a native dialog.
 func runUpdateCmd(cfg *config.Config) {
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
@@ -209,17 +274,19 @@ func runUpdateCmd(cfg *config.Config) {
 		notifyUpdate("更新下载失败", err.Error(), true)
 		return
 	}
-	notifyUpdate("更新完成", fmt.Sprintf("已下载并校验 %s,正在应用后重启...", latest), false)
+	notifyUpdate("更新完成", fmt.Sprintf("已下载并校验 %s。更新将在本进程退出后应用,请重新运行 dsh-desktop 以使用新版本。", latest), false)
 
 	if err := applyUpdate(staged, target); err != nil {
-		notifyUpdate("更新未完成", fmt.Sprintf("已暂存到 \"%s\",请手动替换 \"%s\" 后重启。\n错误: %v", staged, target, err), true)
+		notifyUpdate("更新未完成", fmt.Sprintf("已暂存到 \"%s\",请手动替换 \"%s\" 后重新运行。\n错误: %v", staged, target, err), true)
 		return
 	}
 }
 
 // applyUpdate swaps staged (the newly downloaded exe) over target using a
-// detached helper that waits for this process to exit before copying, then
-// relaunches the app. Runs only on the opt-in -update CLI path.
+// detached helper that waits for this process to exit before copying. It does
+// NOT relaunch the app: --update is a plain CLI command, so it applies the new
+// binary and exits, leaving the user to start dsh-desktop again. This matches
+// the flag help ("download and apply the latest release, then exit").
 func applyUpdate(staged, target string) error {
 	helper := target + ".update.cmd"
 	const createNoWindow = 0x08000000 // CREATE_NO_WINDOW
@@ -228,7 +295,6 @@ func applyUpdate(staged, target string) error {
 		"timeout /t 2 /nobreak >nul\r\n" +
 		"copy /y \"" + staged + "\" \"" + target + "\" >nul\r\n" +
 		"del \"" + staged + "\" >nul 2>nul\r\n" +
-		"start \"\" \"" + target + "\"\r\n" +
 		"del \"%~f0\" >nul 2>nul\r\n"
 	if err := os.WriteFile(helper, []byte(script), 0o755); err != nil {
 		return err

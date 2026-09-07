@@ -12,7 +12,7 @@
 ## 开发
 
 ```powershell
-# 构建(GUI 子系统 + 图标;使用仓库内 .gopath 缓存)
+# 构建(console 子系统;GUI 启动隐藏控制台;使用仓库内 .gopath 缓存)
 .\build.ps1
 
 # 静态检查(注意:singleinstance 的 unsafe.Pointer 是已知误报,勿为此重构)

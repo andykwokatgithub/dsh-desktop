@@ -27,10 +27,10 @@
 - **内嵌渲染**:WebView2 加载 DSH Web UI。
 - **服务生命周期**:探测并静默启动/复用/停止 `dsh web` 后端。
 - **单实例防重**:重复启动时激活已有窗口并退出。
-- **打包体验**:GUI 子系统(无控制台)+ DeepSeek 图标 + 加载/错误页。
+- **打包体验**:console 子系统构建(GUI 启动时隐藏控制台)+ DeepSeek 图标 + 加载/错误页。
 
 **为什么值得用**:相比直接 `dsh web` 在浏览器开标签页,本壳给你一个独立的原生窗口、
-单实例(不会重复弹窗/堆积标签页)、默认复用已在跑的服务(二次启动更快),且无黑色控制台。
+单实例(不会重复弹窗/堆积标签页)、默认复用已在跑的服务(二次启动更快),且 GUI 启动时不闪黑色控制台。
 
 **边界**:它**不承载任何 Harness 逻辑**——`/api` 的执行/读写库、workflow 等能力全部由 `dsh`
 负责,本壳只负责把 Web UI 包进 Windows 窗口。
@@ -71,12 +71,19 @@
 `dsh-desktop-win-x64.exe`,双击即可。该 EXE 内置自更新:
 
 ```powershell
-.\dsh-desktop.exe -check-update   # 检查是否有新版本(弹出原生提示框)
-.\dsh-desktop.exe -update         # 下载并应用,重启生效(弹出原生提示框)
+.\dsh-desktop.exe --check-update   # 检查是否有新版本(输出到控制台)
+.\dsh-desktop.exe --update         # 下载并应用,退出(不弹窗体;请重新运行以使用新版本)
 ```
 
-> 说明:该 EXE 是 **GUI 子系统(无控制台)**,所以命令结果通过**原生提示框**以及
-> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log` 呈现,而不是打印在 PowerShell 里。
+> 说明:这两个命令是纯 CLI 命令,结果直接输出到**控制台**(stdout/stderr),并同时写入
+> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`,不再弹出原生提示框,也不弹窗体。
+>
+> **控制台同步**:该 EXE 用**控制台子系统**构建(不再用 `-H=windowsgui`),所以 `--version`/
+> `--check-update`/`--update` 在 PowerShell/cmd 中会像普通命令一样**同步等待并内联输出**,无副作用。
+>
+> **GUI 启动**:不带这些 flag 启动时,程序会 `ShowWindow(SW_HIDE)` 隐藏双击产生的控制台窗口
+> (双击有极短暂的黑框闪现);从已有终端(PowerShell/cmd)启动 GUI 时会**复用该终端控制台**,
+> PowerShell 会**阻塞直到窗体关闭**,或在已有实例时激活现有窗体并快速退出。
 
 ### 2. npm / `dsh plugin`(插件市场发现与一键管理)
 
@@ -134,26 +141,30 @@ dsh-desktop
 
 ## 配置
 
-命令行 flags(`-url` `-host` `-port` `-command` `-stop-on-exit` `-devtools` `-context-menu`
-`-startup-timeout` `-poll-ms` `-width` `-height` `-title` `-version` `-check-update` `-update`):
+命令行 flags(`--url` `--host` `--port` `--command` `--stop-on-exit` `--devtools` `--context-menu`
+`--startup-timeout` `--poll-ms` `--width` `--height` `--title` `--version` `--check-update` `--update`):
 
 | Flag | 默认值 | 说明 |
 | :-- | :-- | :-- |
-| `-url` | `http://127.0.0.1:3080` | DSH Web UI 的规范本地地址 |
-| `-host` | `127.0.0.1` | 健康探测与 spawn 的绑定 host(禁用 `0.0.0.0`) |
-| `-port` | `3080` | `dsh web` 的监听端口 |
-| `-command` | `web` | 要 spawn 的 `dsh` 子命令(`web` = `--profile web` 别名) |
-| `-stop-on-exit` | `false` | 关闭窗口时是否同时停止 `dsh` 服务(默认保留,二次启动更快) |
-| `-devtools` | `false` | 开启 WebView2 开发者工具(安全默认:关闭) |
-| `-context-menu` | `false` | 保留 WebView2 默认右键菜单(安全默认:关闭) |
-| `-startup-timeout` | `30` | 等待服务就绪的超时(秒) |
-| `-poll-ms` | `500` | 健康校验轮询间隔(毫秒) |
-| `-width` | `1200` | 窗口宽度 |
-| `-height` | `800` | 窗口高度 |
-| `-title` | `DeepSeek Harness` | 窗口标题(仅用于显示;单实例定位不依赖标题) |
-| `-version` | `false` | 打印版本并退出 |
-| `-check-update` | `false` | 检查 GitHub Releases 是否有新版本并退出 |
-| `-update` | `false` | 下载并应用最新版本,然后退出 |
+| `--url` | （空，自动派生） | DSH Web UI 地址。可选覆盖；一旦设置必须与 `--host`/`--port` 一致（校验不通过即报错），为空时由 `--host`+`--port` 派生 |
+| `--host` | `127.0.0.1` | 健康探测与 spawn 的绑定 host(禁用 `0.0.0.0`) |
+| `--port` | `3080` | `dsh web` 的监听端口(1-65535) |
+| `--command` | `web` | 要 spawn 的 `dsh` 子命令(`web` = `--profile web` 别名) |
+| `--stop-on-exit` | `false` | 关闭窗口时是否同时停止 `dsh` 服务(默认保留,二次启动更快) |
+| `--devtools` | `false` | 开启 WebView2 开发者工具(安全默认:关闭) |
+| `--context-menu` | `true` | 保留 WebView2 默认右键菜单(默认开启;如需禁用传 `--context-menu=false`) |
+| `--startup-timeout` | `30` | 等待服务就绪的超时(秒,须>0) |
+| `--poll-ms` | `500` | 健康校验轮询间隔(毫秒,须>0) |
+| `--width` | `1200` | 窗口宽度(须>0) |
+| `--height` | `800` | 窗口高度(须>0) |
+| `--title` | `DeepSeek Harness` | 窗口标题(仅用于显示;单实例定位不依赖标题) |
+| `--version` | `false` | 打印版本并退出 |
+| `--check-update` | `false` | 检查 GitHub Releases 是否有新版本并退出 |
+| `--update` | `false` | 下载并应用最新版本,然后退出 |
+
+> 参数校验：`--host/--port/--width/--height/--startup-timeout/--poll-ms/--url` 在启动前做语义校验，
+> 值非法即在**控制台**(CLI 命令)或**原生对话框**(GUI 启动,无控制台)中报错并退出。
+> 规范写法为双横杠 `--flag`；Go 的 `flag` 包同时兼容单横杠 `-flag` 输入。
 
 ---
 
@@ -165,10 +176,10 @@ dsh-desktop
 .\build.ps1
 ```
 
-或直接构建:
+或直接构建(默认即 console 子系统,无需 `-H=windowsgui`):
 
 ```powershell
-go build -ldflags "-H=windowsgui" -o dsh-desktop.exe .
+go build -o dsh-desktop.exe .
 ```
 
 版本号可通过 `build.ps1 -Version X.Y.Z` 或 `-ldflags` 注入:
@@ -178,7 +189,9 @@ go build -ldflags "-H=windowsgui" -o dsh-desktop.exe .
 go run . -version   # -> dsh-desktop 1.2.3
 ```
 
-> **必须保留 `-H=windowsgui`**,否则生成的是 console 子系统,双击会弹黑色控制台。
+> **构建形态**:出于让 CLI 命令在 PowerShell/cmd 中同步输出等考量,EXE 用 **console 子系统**构建
+> (不再用 `-H=windowsgui`)。GUI 运行时 `main.hideConsole()` 会隐藏双击产生的控制台窗口(有极短的
+> 黑框闪现);从已有终端启动 GUI 时复用该终端控制台,PowerShell 会阻塞直到窗体关闭。
 > `webview_go` 依赖 CGO,需要本机 Windows + GCC;不能跨平台交叉编译。
 > 运行 `dsh-desktop.exe` 会真的拉起 `dsh web`,不要在无 DSH 环境时盲目运行;验证请用
 > `go run . -version` 或单测。

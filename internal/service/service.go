@@ -31,9 +31,8 @@ import (
 	"time"
 )
 
-// Behavior captures the probe/poll/LSP parameters.
+// Behavior captures the probe/poll/spawn parameters.
 type Behavior struct {
-	URL            string
 	Host           string
 	Port           int
 	Command        string

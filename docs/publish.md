@@ -23,7 +23,7 @@ DSH 插件( bundle )本质是一个 **npm 包**,它的 `package.json` 声明:
 
 | 通道 | 面向谁 | 安装 | 更新 |
 | :-- | :-- | :-- | :-- |
-| **GitHub Releases** | 直接下载 EXE 的终端用户 | 下载 `dsh-desktop-win-x64.exe` | 内置 `-check-update` / `-update` 自更新 |
+| **GitHub Releases** | 直接下载 EXE 的终端用户 | 下载 `dsh-desktop-win-x64.exe` | 内置 `--check-update` / `--update` 自更新 |
 | **npm / `dsh plugin`** | 走 npm 或 DSH 插件的用户 | `npm i -g @andykwok/dsh-desktop` 或 `dsh plugin --profile web add github:andykwokatgithub/dsh-desktop` | `npm update -g ...` / `dsh plugin ... update` |
 
 ---
@@ -112,12 +112,12 @@ dsh plugin --profile web update          # DSH 插件途径(自动激活升到�
 #   https://github.com/andykwokatgithub/dsh-desktop/releases → dsh-desktop-win-x64.exe
 
 # 自更新
-.\dsh-desktop.exe -check-update   # 仅报告是否有新版本
-.\dsh-desktop.exe -update         # 下载并校验最释版,调度一个延迟任务替换自身后重启
+.\dsh-desktop.exe --check-update   # 仅报告是否有新版本
+.\dsh-desktop.exe --update         # 下载并校验最释版,调度一个延迟任务替换自身后退出(不弹窗体)
 ```
 
-实现:`internal/update`(语义化版本比较、`sha256` 校验、下载后原子写入)。`-update`
-通过一个分离的 `cmd` 辅助脚本,等当前进程退出后复制新 EXE 并重启,避免锁定文件。
+实现:`internal/update`(语义化版本比较、`sha256` 校验、下载后原子写入)。`--update`
+通过一个分离的 `cmd` 辅助脚本,等当前进程退出后复制新 EXE 并退出(不自动重启),避免锁定文件。
 
 ---
 
