@@ -7,7 +7,23 @@
 
 ## [Unreleased]
 
-## [0.2.7] - 2026-09-07
+## [0.2.9] - 2026-09-07
+
+### Changed
+- **自更新下载更健壮(支持本地代理与国内镜像回退)**:GitHub release 的**二进制资产**由 CDN 下发,
+  在部分网络(尤其国内)直连被限速/阻断,导致 `--update` 在下载 15.3MB 的 exe 时撞上 60 秒
+  超时报 `context deadline exceeded`。现改为:
+  - **候选顺序失败回退**:官方直连 →(若检测到本地 HTTP 代理,env 或 `127.0.0.1:7890` 等常见
+    Clash/V2Ray 端口)**经该代理** → **国内镜像**(`ghfast.top`/`ghproxy.net`/`ghproxy.com`/
+    `gh-proxy.com`)。首个成功者胜出。
+  - **每次尝试独立超时**(45s)、每候选 1 次,避免单个卡死的 host 吃完整个更新窗口。
+  - **取版本/取 SHA 回退到默认客户端**,不再强制走本地代理(`api.github.com` 本身直连可用,
+    避免把这项也弄坏)。
+  - **SHA256 校验不受影响**:`FetchSHA` 走同一套回退取官方校验和,镜像下载的二进制仍按官方
+    SHA256 校验,镜像无法投放未校验的产物。
+  - 顶层超时由 60s 放宽到 **12 分钟**,并给「解析版本 / 取 SHA」单独 **2 分钟**预算(不拖住整体)。
+- **新增 `internal/update/update_test.go`**:覆盖 `SemverCompare`/`NewerThan`/`LoadSHA`/
+  `Release.Version` 与 `Release.AssetURL`。
 
 ### Changed
 - **`--context-menu` 默认开启**:`ContextMenu` 默认值由 `false` 改为 `true`,即默认保留 WebView2 右键菜单

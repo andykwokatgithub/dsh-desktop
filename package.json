@@ -1,6 +1,6 @@
 {
   "name": "@andykwok/dsh-desktop",
-  "version": "0.2.7",
+  "version": "0.2.9",
   "description": "A Go + WebView2 desktop shell for the DeepSeek Harness Web UI (dsh web). Prebuilt Windows x64 binary bundled in the package; no install script and no runtime download needed.",
   "private": false,
   "publishConfig": {

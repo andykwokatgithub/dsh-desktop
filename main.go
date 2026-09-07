@@ -244,10 +244,17 @@ func notifyUpdate(title, text string, isError bool) {
 // and applies it. It runs before the GUI window opens, printing results directly
 // to the console (see notifyUpdate) rather than showing a native dialog.
 func runUpdateCmd(cfg *config.Config) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	// Generous ceiling for the download + failover chain; each download attempt
+	// is individually bounded by the update package so a hanging host fails over
+	// to the local proxy or a mirror instead of blowing the whole budget.
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Minute)
 	defer cancel()
 
-	exeURL, sha, latest, err := update.Resolve(ctx, update.DefaultRepo, config.Version)
+	// The resolve/metadata step is normally fast; give it its own short budget so
+	// a hung api.github.com or SHA fetch cannot stall the whole command.
+	resolveCtx, cancelResolve := context.WithTimeout(ctx, 2*time.Minute)
+	exeURL, sha, latest, err := update.Resolve(resolveCtx, update.DefaultRepo, config.Version)
+	cancelResolve()
 	if err != nil {
 		if errors.Is(err, update.ErrNoNewer) {
 			notifyUpdate("更新检查", fmt.Sprintf("dsh-desktop 已是最新版本 (%s)", config.Version), false)

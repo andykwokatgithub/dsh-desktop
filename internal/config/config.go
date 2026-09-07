@@ -13,7 +13,7 @@ import (
 // Version is the application version. It can be overridden at build time:
 //
 //	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.2.7" .
-var Version = "0.2.7"
+var Version = "0.2.9"
 
 // Config is the fully-resolved runtime configuration.
 type Config struct {
