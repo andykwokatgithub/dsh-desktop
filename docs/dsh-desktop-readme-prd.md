@@ -4,7 +4,7 @@
 | :--- | :--- | :--- | :--- |
 | V1.0 | 2026-09-03 | AI Assistant | 依据对现有 `README.md` 的全面审阅与 GitHub README 最佳实践，给出 README 重写的需求基线。 |
 
-> 配套文档：[`README.md`](../README.md)（现状）、[`dsh-desktop-prd.md`](./dsh-desktop-prd.md)（产品 PRD V1.1）、[`dsh-desktop-technical-design.md`](./dsh-desktop-technical-design.md)、[`publish.md`](./publish.md)。
+> 配套文档：[`README.md`](../README.md)（现状）、[`dsh-desktop-prd.md`](./dsh-desktop-prd.md)（产品 PRD V1.2）、[`dsh-desktop-technical-design.md`](./dsh-desktop-technical-design.md)、[`publish.md`](./publish.md)。
 > 本文的读者：README 作者 / 维护者，以及想在仓库中一次性把 README 写对的人。
 
 ---

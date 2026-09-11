@@ -11,7 +11,7 @@ var zhFlagUsage = map[string]string{
 	"host":            "健康探测与 dsh 启动使用的绑定地址",
 	"port":            "dsh web 服务的监听端口",
 	"command":         "要启动的 dsh 子命令 (web)",
-	"stop-on-exit":    "关闭窗口时同时停止 dsh 服务",
+	"stop-on-exit":    "关闭窗口时停止本壳自己启动的 dsh 服务 (他人/附着的实例不会被停止)",
 	"devtools":        "启用 WebView2 开发者工具",
 	"context-menu":    "保留 WebView2 默认右键菜单",
 	"startup-timeout": "等待服务就绪的超时秒数 (须 > 0)",
@@ -22,7 +22,7 @@ var zhFlagUsage = map[string]string{
 	"version":         "打印版本并退出",
 	"check-update":    "检查 GitHub Releases 是否有新版本并退出",
 	"update":          "下载并应用最新版本, 然后退出",
-	"url":             "dsh web UI 的规范 URL (可选覆盖; 必须与 --host/--port 一致)",
+	"url":             "要附着的 dsh web URL (可带 ?token=…; 未显式指定 --host/--port 时采纳其 host/port, 冲突则报错)",
 }
 
 // writeUsage prints the flag help for the given FlagSet in the current UI

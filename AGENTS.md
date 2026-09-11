@@ -9,7 +9,7 @@
 - **内嵌渲染**:WebView2 加载 DSH Web UI(通过 `github.com/webview/webview_go`)。
 - **服务生命周期**:探测并静默启动/复用/停止 `dsh web` 后端。
 - **单实例防重**:重复启动时激活已有窗口并退出。
-- **打包体验**:console 子系统构建(GUI 启动时隐藏控制台)+ DeepSeek 图标 + 加载/错误页。
+- **打包体验**:console 子系统构建(GUI 启动时隐藏控制台)+ DeepSeek 图标 + 内嵌 loading/error/token 页。
 
 需求与实现约束见 `docs/dsh-desktop-prd.md`(V1.2)与 `docs/dsh-desktop-technical-design.md`。
 
@@ -34,7 +34,7 @@
 go build -o dsh-desktop.exe .
 
 # 看版本
-go run . -version        # -> dsh-desktop 0.2.9
+go run . -version        # -> dsh-desktop 0.3.0
 
 # 静态检查
 go vet ./...
@@ -91,7 +91,7 @@ CHANGELOG.md                       变更日志(Keep a Changelog)
 
 ## 7. 约定
 
-- 版本:`internal/config.Version`(默认 `0.2.9`,与 `package.json` 及 CHANGELOG 当前发布版一致),发布时用 `-ldflags -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=<ver>` 覆盖,并同步更新 `CHANGELOG.md`、`package.json` 与打 Git tag(如 `v0.2.9`)。
+- 版本:`internal/config.Version`(默认 `0.3.0`,与 `package.json` 及 CHANGELOG 当前发布版一致),发布时用 `-ldflags -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=<ver>` 覆盖,并同步更新 `CHANGELOG.md`、`package.json` 与打 Git tag(如 `v0.3.0`)。
 - 变更日志:凡是影响行为的变更,同步更新 `CHANGELOG.md`(先写 `[Unreleased]`,发布时移入版本)。
 - 语言/注释:代码注释与文档以中文为主,与现有仓库一致。
 - 不要提交 `dsh-desktop.exe`、`.gopath/`、`dsh-desktop.exe~`。

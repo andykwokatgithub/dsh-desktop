@@ -5,7 +5,7 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
-## [Unreleased]
+## [0.3.0] - 2026-09-11
 
 ### Added
 - **端口占用者识别层 `internal/procinfo`(纯 Win32,零子进程、零 WMI)**:新增
@@ -38,6 +38,11 @@
 - **认证栅栏自愈**:复用自有实例时若页面命中 `dsh web authentication required`(cookie 失效/过期),自动停掉自有实例并以新 token 重新拉起;**非本壳**实例则转 token 输入页(不再把用户留在 401 文本页)。
 - **`--url` 语义**:未显式指定 `--host`/`--port` 时,`--url` 的 host/port 被采纳(`--url "http://127.0.0.1:34567/?token=…"` 可单独使用);显式端点与 URL 冲突仍报错;URL 必须含显式端口;新增 `Config.URLToken()`/`HostSet`/`PortSet`。
 - `--host 0.0.0.0` 在参数校验阶段即报错(dsh 顶层已拒绝该绑定)。
+- **README 对齐本轮实现**:`README.md` 新增「实例识别与安全边界」一节(L1/L2/L3 判据、`StopOwned`
+  终止证明、任何分支都不终止端口占用者、token 不落盘),典型场景补齐"附着他人实例 / token 输入页 /
+  端口被占改用回退端口 / 认证栅栏自愈",配置表更新 `--url`(采纳 host/port、必须含显式端口)与
+  `--stop-on-exit`(只停归属可证的自有实例)的口径,并补系统语言文案、状态目录与目录结构说明;
+  `--help` 的中文 `--url`/`--stop-on-exit` 描述同步更正。
 - **文档**:`docs/dsh-desktop-prd.md` V1.2 的 FR-01 判据改为 L1/L2/L3 三层(§1.1 补进程形态实测事实、
   FR-04 归属记录字段与 NFR 安全行同步);**新增两项交互需求**:FR-02 统一为 **HTML 模式窗体**
   (`loading`/`error`/`token`/`update`/`updating` 内嵌本地页 + `Bind` 桥接,取消原生 MessageBox,

@@ -12,8 +12,8 @@ import (
 
 // Version is the application version. It can be overridden at build time:
 //
-//	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.2.7" .
-var Version = "0.2.9"
+//	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.3.0" .
+var Version = "0.3.0"
 
 // Config is the fully-resolved runtime configuration.
 type Config struct {
@@ -106,7 +106,7 @@ func Parse(args []string) (*Config, error) {
 	fs.StringVar(&cfg.Host, "host", cfg.Host, "bind host used by the health probe and dsh spawn")
 	fs.IntVar(&cfg.Port, "port", cfg.Port, "listen port of the dsh web service")
 	fs.StringVar(&cfg.Command, "command", cfg.Command, "dsh subcommand to spawn (web)")
-	fs.BoolVar(&cfg.StopOnExit, "stop-on-exit", cfg.StopOnExit, "stop the dsh service when the window closes")
+	fs.BoolVar(&cfg.StopOnExit, "stop-on-exit", cfg.StopOnExit, "stop the dsh service this shell started when the window closes")
 	fs.BoolVar(&cfg.DevTools, "devtools", cfg.DevTools, "enable WebView2 developer tools")
 	fs.BoolVar(&cfg.ContextMenu, "context-menu", cfg.ContextMenu, "leave the WebView2 default context menu enabled")
 	fs.IntVar(&cfg.StartupTimeoutSec, "startup-timeout", cfg.StartupTimeoutSec, "seconds to wait for the service to become healthy")
