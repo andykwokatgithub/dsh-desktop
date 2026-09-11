@@ -29,6 +29,8 @@ import (
 	"sync"
 	"syscall"
 	"time"
+
+	"github.com/deepseek-ai/dsh-desktop/internal/procinfo"
 )
 
 // Behavior captures the probe/poll/spawn parameters.
@@ -80,6 +82,31 @@ func (b Behavior) PortOpen() bool {
 	}
 	_ = conn.Close()
 	return true
+}
+
+// State classifies what answers on an endpoint.
+type State int
+
+const (
+	// StateFree: nothing is listening.
+	StateFree State = iota
+	// StateHealthy: something answers with a dsh-web signal.
+	StateHealthy
+	// StateOccupied: something listens but shows no dsh-web signal.
+	StateOccupied
+)
+
+// Probe classifies the endpoint. Identity -- is the occupant really dsh, and is
+// it ours? -- is decided separately (procinfo for the process, Endpoint for the
+// record); see the startup decision in main.go.
+func (b Behavior) Probe() State {
+	if b.Healthy() {
+		return StateHealthy
+	}
+	if b.PortOpen() {
+		return StateOccupied
+	}
+	return StateFree
 }
 
 // Cmd bundles an in-flight spawned dsh process, its stdout pipe, and the
@@ -182,17 +209,25 @@ func WaitHealthy(ctx context.Context, b Behavior, c *Cmd) (string, error) {
 	}
 }
 
-// Stop terminates the whole dsh process tree (dsh + node worker/subagent).
+// Stop terminates the whole dsh process tree (dsh + node worker/subagent). A
+// process that has already exited is not an error, and a genuinely failed kill
+// is reported so callers can say so instead of pretending it worked.
 func Stop(pid int) error {
 	if pid <= 0 {
 		return nil
 	}
 	// taskkill /F /T kills the process and all of its descendants.
-	if err := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(pid)).Run(); err != nil {
-		// Fall back to the actual pid if the wrapper already exited.
-		_ = exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid)).Run()
+	if err := exec.Command("taskkill", "/F", "/T", "/PID", strconv.Itoa(pid)).Run(); err == nil {
+		return nil
 	}
-	return nil
+	// Fall back to the actual pid if the wrapper already exited.
+	if err := exec.Command("taskkill", "/F", "/PID", strconv.Itoa(pid)).Run(); err == nil {
+		return nil
+	}
+	if _, err := procinfo.StartTime(pid); err != nil {
+		return nil // the process is gone; nothing to report
+	}
+	return fmt.Errorf("service: taskkill %d failed", pid)
 }
 
 func watchReadyLine(r io.Reader, c *Cmd, ch chan<- struct{}) {

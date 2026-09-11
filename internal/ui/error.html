@@ -16,11 +16,12 @@
   .msg { font-size: 13px; color: #8b949e; max-width: 520px; line-height: 1.6; }
   pre { color: #c9d1d9; font-size: 12px; }
   .actions { margin-top: 8px; display: flex; gap: 10px; }
-  button {
+  button, .actions a {
     padding: 8px 18px; border: 1px solid #30363d; border-radius: 6px;
     background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 13px;
+    text-decoration: none;
   }
-  button:hover { background: #30363d; }
+  button:hover, .actions a:hover { background: #30363d; }
 </style>
 </head>
 <body>
@@ -29,8 +30,21 @@
   <div class="msg" id="msg">发生未知错误。</div>
   <pre id="detail" style="display:none"></pre>
   <div class="actions">
-    <button onclick="window.location.reload()">重试</button>
-    <button onclick="location.href='https://github.com/deepseek-ai/deepseek-harness'">查看文档</button>
+    <button onclick="retry()">重试</button>
+    <a class="doc" href="https://github.com/deepseek-ai/deepseek-harness">查看文档</a>
   </div>
+<script>
+  // The shell pushes the reason in (Go -> page); the page never invents one.
+  window.__dshError = function (message) {
+    if (!message) return;
+    document.getElementById('msg').textContent = message;
+  };
+  function retry() {
+    var btn = document.querySelector('button');
+    if (btn) btn.disabled = true;
+    document.getElementById('msg').textContent = '正在重试…';
+    if (window.__dshRetry) window.__dshRetry();
+  }
+</script>
 </body>
 </html>

@@ -54,17 +54,26 @@ func TestValidate(t *testing.T) {
 		want   bool // true if we expect an error
 	}{
 		{"host empty", func(c *Config) { c.Host = "" }, true},
+		{"host all interfaces", func(c *Config) { c.Host = "0.0.0.0" }, true},
 		{"port 0", func(c *Config) { c.Port = 0 }, true},
 		{"port over 65535", func(c *Config) { c.Port = 70000 }, true},
 		{"width 0", func(c *Config) { c.WindowWidth = 0 }, true},
 		{"height negative", func(c *Config) { c.WindowHeight = -1 }, true},
 		{"startup-timeout 0", func(c *Config) { c.StartupTimeoutSec = 0 }, true},
 		{"poll-ms 0", func(c *Config) { c.PollIntervalMS = 0 }, true},
-		{"url host mismatch", func(c *Config) { c.URL = "http://localhost:3080" }, true},
-		{"url port mismatch", func(c *Config) { c.URL = "http://127.0.0.1:4000" }, true},
+		// --url lone: host and port are adopted from it.
+		{"url derives host", func(c *Config) { c.URL = "http://localhost:3080" }, false},
+		{"url derives port", func(c *Config) { c.URL = "http://127.0.0.1:4000" }, false},
+		// --url against an explicit endpoint must agree with it.
+		{"url host mismatch with --host", func(c *Config) { c.HostSet, c.URL = true, "http://localhost:3080" }, true},
+		{"url port mismatch with --port", func(c *Config) { c.PortSet, c.URL = true, "http://127.0.0.1:4000" }, true},
+		{"url explicit endpoint matches", func(c *Config) { c.HostSet, c.PortSet, c.URL = true, true, "http://127.0.0.1:3080/?token=x" }, false},
 		{"url bad scheme", func(c *Config) { c.URL = "ftp://127.0.0.1:3080" }, true},
+		{"url without port", func(c *Config) { c.URL = "http://127.0.0.1/" }, true},
+		{"url without host", func(c *Config) { c.URL = "http://:3080/" }, true},
 		{"url valid", func(c *Config) { c.URL = "http://127.0.0.1:3080" }, false},
 		{"url https valid", func(c *Config) { c.URL = "https://127.0.0.1:3080" }, false},
+		{"url with token", func(c *Config) { c.URL = "http://127.0.0.1:3080/?token=abc" }, false},
 	}
 
 	for _, tc := range cases {
@@ -110,5 +119,47 @@ func TestParseFlags(t *testing.T) {
 	}
 	if cfg.Port != 5000 {
 		t.Fatalf("Port = %d, want 5000", cfg.Port)
+	}
+	if !cfg.PortSet {
+		t.Fatal("PortSet = false, want true when --port is written")
+	}
+}
+
+// TestURLTokenAndDerivation covers FR-05: an explicit --url supplies the
+// endpoint when --host/--port were left at their defaults, and it may carry the
+// process launch token.
+func TestURLTokenAndDerivation(t *testing.T) {
+	cfg, err := Parse([]string{"--url", "http://127.0.0.1:34567/?token=abc-123"})
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if cfg.Host != "127.0.0.1" || cfg.Port != 34567 {
+		t.Fatalf("derived endpoint = %s:%d, want 127.0.0.1:34567", cfg.Host, cfg.Port)
+	}
+	if got := cfg.URLToken(); got != "abc-123" {
+		t.Fatalf("URLToken() = %q, want %q", got, "abc-123")
+	}
+	if cfg.CanonicalURL() != "http://127.0.0.1:34567" {
+		t.Fatalf("CanonicalURL() = %q", cfg.CanonicalURL())
+	}
+	if cfg.PageURL() != "http://127.0.0.1:34567/?token=abc-123" {
+		t.Fatalf("PageURL() = %q, want the explicit URL verbatim", cfg.PageURL())
+	}
+
+	// A URL without a token yields "" and leaves the default endpoint alone.
+	cfg, err = Parse([]string{"--url", "http://127.0.0.1:3080/"})
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if got := cfg.URLToken(); got != "" {
+		t.Fatalf("URLToken() = %q, want empty", got)
+	}
+
+	// An explicit --host/--port still wins, and a contradicting --url fails.
+	if _, err := Parse([]string{"--host", "127.0.0.1", "--port", "4000", "--url", "http://127.0.0.1:4000/?token=x"}); err != nil {
+		t.Fatalf("consistent explicit endpoint + --url should parse: %v", err)
+	}
+	if _, err := Parse([]string{"--port", "4000", "--url", "http://127.0.0.1:4001/?token=x"}); err == nil {
+		t.Fatal("Parse() with a contradicting --url port should error")
 	}
 }

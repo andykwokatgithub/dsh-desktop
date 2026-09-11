@@ -9,3 +9,6 @@ var Loading string
 
 //go:embed error.html
 var Error string
+
+//go:embed token.html
+var Token string

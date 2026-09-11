@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="utf-8" />
+<title>DeepSeek Harness</title>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh; display: flex; flex-direction: column;
+    align-items: center; justify-content: center; gap: 14px; padding: 32px;
+    background: #0d1117; color: #c9d1d9;
+    font-family: "Segoe UI", system-ui, sans-serif; text-align: center;
+  }
+  .icon { font-size: 40px; }
+  .title { font-size: 18px; font-weight: 700; }
+  .msg { font-size: 13px; color: #8b949e; max-width: 560px; line-height: 1.7; }
+  code, .target {
+    font-family: Consolas, "Cascadia Mono", monospace; font-size: 12px;
+    background: #161b22; border: 1px solid #30363d; border-radius: 6px;
+    padding: 2px 6px; color: #c9d1d9;
+  }
+  .form { display: flex; gap: 8px; width: min(560px, 90vw); }
+  input {
+    flex: 1; padding: 9px 12px; border-radius: 6px; border: 1px solid #30363d;
+    background: #161b22; color: #c9d1d9; font-size: 13px;
+  }
+  input:focus { outline: none; border-color: #4d9fff; }
+  button {
+    padding: 9px 16px; border: 1px solid #30363d; border-radius: 6px;
+    background: #21262d; color: #c9d1d9; cursor: pointer; font-size: 13px;
+    white-space: nowrap;
+  }
+  button:hover { background: #30363d; }
+  button.primary { background: #1f6feb; border-color: #1f6feb; color: #fff; }
+  button.primary:hover { background: #388bfd; }
+  button:disabled { opacity: .5; cursor: default; }
+  #status { font-size: 12px; min-height: 18px; color: #8b949e; }
+  #status.err { color: #f85149; }
+  #status.ok { color: #3fb950; }
+  .hint { font-size: 12px; color: #6e7681; max-width: 560px; line-height: 1.6; }
+</style>
+</head>
+<body>
+  <div class="icon">🔑</div>
+  <div class="title">需要该 DSH 实例的 token</div>
+  <div class="msg">
+    <span class="target" id="target">该端口</span> 上运行着 <b>非本应用启动</b>的
+    DeepSeek Harness 实例。把启动它的终端里打印的那行 URL 粘贴进来，即可直接用这个实例
+    （不会另起一个）。
+  </div>
+  <div class="form">
+    <input id="t" type="password" autocomplete="off" spellcheck="false"
+           placeholder="http://127.0.0.1:3080/?token=…  或  直接粘贴 token" />
+    <button class="primary" id="submit">使用该 token</button>
+  </div>
+  <div id="status"></div>
+  <div class="hint">
+    取值方法：在运行 <code>dsh web</code> 的终端里找到
+    <code>dsh web: http://…?token=…</code> 这一行，整行复制粘贴即可（会自动提取 token）。
+    token 只在内存中传递，不会写入日志或磁盘。
+  </div>
+  <div class="actions">
+    <button id="skip">改用本应用自己的实例</button>
+  </div>
+<script>
+  function $(id) { return document.getElementById(id); }
+  function show(text, cls) {
+    var el = $('status');
+    el.textContent = text || '';
+    el.className = cls || '';
+  }
+
+  window.__dshTokenResult = function (ok, message) {
+    if (ok) {
+      show(message || 'token 有效，正在进入界面…', 'ok');
+      $('t').value = '';
+      $('submit').disabled = true;
+      $('skip').disabled = true;
+      return;
+    }
+    show(message || 'token 无效或已过期，请重新从 dsh web 的输出复制。', 'err');
+    $('submit').disabled = false;
+  };
+
+  async function init() {
+    try {
+      if (!window.__dshTokenTarget) return;
+      var target = await window.__dshTokenTarget();
+      if (target && target.host) {
+        $('target').textContent = target.host + ':' + target.port;
+      }
+    } catch (e) { /* the label is cosmetic only */ }
+  }
+
+  async function submit() {
+    var value = $('t').value;
+    if (!value.trim()) {
+      show('请先粘贴 token 或 dsh web 打印的整条 URL。', 'err');
+      return;
+    }
+    $('submit').disabled = true;
+    show('正在校验 token…');
+    try {
+      if (!window.__dshSubmitToken) { show('页面桥接不可用，请重启应用。', 'err'); return; }
+      await window.__dshSubmitToken(value);
+    } catch (e) {
+      show('提交失败：' + (e && e.message ? e.message : e), 'err');
+      $('submit').disabled = false;
+    }
+  }
+
+  async function skip() {
+    $('skip').disabled = true;
+    show('正在启动本应用自己的实例…');
+    try {
+      if (window.__dshSkipToken) await window.__dshSkipToken();
+    } catch (e) {
+      show('启动失败：' + (e && e.message ? e.message : e), 'err');
+      $('skip').disabled = false;
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', function () {
+    init();
+    $('submit').addEventListener('click', submit);
+    $('skip').addEventListener('click', skip);
+    $('t').addEventListener('keydown', function (e) {
+      if (e.key === 'Enter') { e.preventDefault(); submit(); }
+    });
+    $('t').focus();
+  });
+</script>
+</body>
+</html>

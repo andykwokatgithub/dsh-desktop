@@ -32,12 +32,29 @@ type Config struct {
 	CheckUpdate       bool // check GitHub Releases for a newer version and exit
 	Update            bool // download + apply a newer version and exit
 
-	// URL is an optional explicit override for the page the shell loads. It is
-	// empty by default, in which case the page address is derived from Host+Port
-	// (see CanonicalURL). When set it is used verbatim as the navigation target,
-	// but only after validate() confirms it points at the same host:port that is
-	// probed/spawned, so the page and the service can never diverge.
+	// URL is an optional explicit target: the dsh web URL, optionally carrying
+	// the process launch token ("http://127.0.0.1:3080/?token=..."). Its host and
+	// port are adopted as Host/Port (see applyURL) unless --host/--port were
+	// given explicitly, in which case a mismatch is an error, so the page
+	// address the shell loads and the endpoint it probes can never diverge.
 	URL string
+
+	// HostSet/PortSet record whether --host/--port were given explicitly, which
+	// decides whether an explicit --url may derive them.
+	HostSet bool
+	PortSet bool
+}
+
+// URLToken returns the token query parameter of an explicit --url, or "".
+func (c *Config) URLToken() string {
+	if c.URL == "" {
+		return ""
+	}
+	u, err := url.Parse(c.URL)
+	if err != nil {
+		return ""
+	}
+	return u.Query().Get("token")
 }
 
 // Default returns the recommended defaults (see PRD V1.1).
@@ -100,25 +117,28 @@ func Parse(args []string) (*Config, error) {
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "print version and exit")
 	fs.BoolVar(&cfg.CheckUpdate, "check-update", false, "check GitHub Releases for a newer version and exit")
 	fs.BoolVar(&cfg.Update, "update", false, "download and apply the latest release, then exit")
-	fs.StringVar(&cfg.URL, "url", cfg.URL, "canonical URL of the dsh web UI (optional override; must match --host/--port)")
+	fs.StringVar(&cfg.URL, "url", cfg.URL, "dsh web URL to attach to (may carry ?token=…; its host/port are adopted)")
 
 	// Custom usage so the documented double-dash style is what --help prints.
+	// The output is shown in Chinese or English depending on the current system
+	// language (see useChineseUI).
 	fs.Usage = func() {
-		out := fs.Output()
-		fmt.Fprintf(out, "用法: dsh-desktop [选项]\n\n选项:\n")
-		fs.VisitAll(func(f *flag.Flag) {
-			name := "--" + f.Name
-			def := ""
-			if f.DefValue != "" && f.DefValue != "false" {
-				def = "  (默认 " + f.DefValue + ")"
-			}
-			fmt.Fprintf(out, "  %-24s  %s%s\n", name, f.Usage, def)
-		})
+		writeUsage(fs, useChineseUI())
 	}
 
 	if err := fs.Parse(args); err != nil {
 		return nil, err
 	}
+	// Remember which endpoint flags were written explicitly: an explicit --url
+	// may derive Host/Port only when they were left at their defaults.
+	fs.Visit(func(f *flag.Flag) {
+		switch f.Name {
+		case "host":
+			cfg.HostSet = true
+		case "port":
+			cfg.PortSet = true
+		}
+	})
 	if err := cfg.validate(); err != nil {
 		return nil, err
 	}
@@ -126,10 +146,19 @@ func Parse(args []string) (*Config, error) {
 }
 
 // validate checks the semantic bounds of the parsed parameters so a
-// misconfigured invocation fails loudly instead of misbehaving at runtime.
+// misconfigured invocation fails loudly instead of misbehaving at runtime. An
+// explicit --url is resolved first, because it may supply Host/Port.
 func (c *Config) validate() error {
+	if c.URL != "" {
+		if err := c.applyURL(); err != nil {
+			return err
+		}
+	}
 	if c.Host == "" {
 		return fmt.Errorf("参数 --host 不能为空")
+	}
+	if c.Host == "0.0.0.0" {
+		return fmt.Errorf("参数 --host 不支持 0.0.0.0（dsh 顶层已拒绝该绑定；请用 127.0.0.1）")
 	}
 	if c.Port < 1 || c.Port > 65535 {
 		return fmt.Errorf("参数 --port 必须在 1-65535 之间, 当前为 %d", c.Port)
@@ -146,15 +175,17 @@ func (c *Config) validate() error {
 	if c.PollIntervalMS <= 0 {
 		return fmt.Errorf("参数 --poll-ms 必须大于 0, 当前为 %d", c.PollIntervalMS)
 	}
-	if c.URL != "" {
-		return c.checkURL()
-	}
 	return nil
 }
 
-// checkURL ensures an explicit --url still points at the endpoint the shell
-// probes/spawns, so navigation and service checks never diverge.
-func (c *Config) checkURL() error {
+// applyURL resolves an explicit --url.
+//
+// An explicit --host/--port wins: a --url that contradicts either is a mistake
+// worth failing on. When they were left at their defaults, the URL's host and
+// port are adopted, so "dsh-desktop --url http://127.0.0.1:34567/?token=…" can
+// attach to an instance that is not on the preferred port. A port-less URL is
+// refused: it would silently mean :80 while the shell probes 3080.
+func (c *Config) applyURL() error {
 	u, err := url.Parse(c.URL)
 	if err != nil {
 		return fmt.Errorf("参数 --url 无效: %w", err)
@@ -162,20 +193,24 @@ func (c *Config) checkURL() error {
 	if u.Scheme != "http" && u.Scheme != "https" {
 		return fmt.Errorf("参数 --url 的 scheme 必须是 http/https, 当前为 %q", u.Scheme)
 	}
-	if !strings.EqualFold(u.Hostname(), c.Host) {
+	if u.Hostname() == "" {
+		return fmt.Errorf("参数 --url 缺少主机名: %q", c.URL)
+	}
+	portText := u.Port()
+	if portText == "" {
+		return fmt.Errorf("参数 --url 必须包含显式端口（例如 http://127.0.0.1:3080/?token=…）: %q", c.URL)
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port < 1 || port > 65535 {
+		return fmt.Errorf("参数 --url 的端口无效: %q", portText)
+	}
+	if c.PortSet && port != c.Port {
+		return fmt.Errorf("参数 --url(%q) 的端口 %d 与 --port(%d) 不一致", c.URL, port, c.Port)
+	}
+	if c.HostSet && !strings.EqualFold(u.Hostname(), c.Host) {
 		return fmt.Errorf("参数 --url(%q) 的主机 %q 与 --host(%q) 不一致", c.URL, u.Hostname(), c.Host)
 	}
-	port := u.Port()
-	if port == "" {
-		switch u.Scheme {
-		case "https":
-			port = "443"
-		default:
-			port = "80"
-		}
-	}
-	if port != strconv.Itoa(c.Port) {
-		return fmt.Errorf("参数 --url(%q) 的端口 %q 与 --port(%d) 不一致", c.URL, port, c.Port)
-	}
+	c.Host = u.Hostname()
+	c.Port = port
 	return nil
 }

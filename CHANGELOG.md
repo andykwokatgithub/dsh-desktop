@@ -7,6 +7,51 @@
 
 ## [Unreleased]
 
+### Added
+- **端口占用者识别层 `internal/procinfo`(纯 Win32,零子进程、零 WMI)**:新增
+  `ListenerPID` / `ImagePath` / `CommandLine` / `StartTime` / `ParentPID` / `Ancestors` 与
+  端口占用者身份 `Info`。实现要点:
+  - `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)` 取**监听 PID**——**不解析 `netstat -ano`
+    文本**(表头随系统语言本地化,`findstr :3080` 会误配 `:30801`/对端地址/IPv6,且多一次进程开销);
+  - `QueryFullProcessImageNameW` 取镜像路径,`NtQueryInformationProcess(ProcessCommandLineInformation)`
+    取命令行(实测:类 60 会把字符串**复制进调用者缓冲区**,自包含 `UNICODE_STRING`,须先按其返回长度
+    分配;同用户进程**免提权、免 `ReadProcessMemory`**),因此**不需要 spawn PowerShell/CIM**;
+  - `dsh.go` 提供 DSH 关键字匹配,分**强证据**(`@deepseek-ai\dsh` / `deepseek-harness` / `dsh web` /
+    `…\dsh\lib\bin.js`;`/` 与 `\`、重复分隔符、大小写均已归一)与**弱证据**(裸 `dsh`、`--port <端口>`,
+    本壳自身的 `dsh-desktop.exe --port …` 也会命中);弱证据不足以判定为 dsh。
+- 新增 `internal/procinfo` 单元测试:关键字匹配(用真实命令行样本:node 监听者 / npm shim `cmd /c "dsh web …"` /
+  本壳自身 / 无关进程)、监听 PID(自建监听器=本进程、通配绑定回退、已关闭端口报"未知")、
+  镜像/命令行/启动时间/父进程/祖先链,以及 MIB 表端口字节序解码。
+- **token 附着既有 DSH 实例(FR-05)**:端口上是**非本壳启动**的 DSH 实例时,先按持久化 cookie 附着(升级后旧实例没有归属记录也不至于一上来就要 token);**若取不了验证**(命中认证栅栏)则在窗口内显示 `internal/ui/token.html`,让用户粘贴 `dsh web` 打印的整条认证 URL(或裸 token):
+  - `internal/service.ParseTokenInput`:兼容"裸 token / 整条 URL / 夹在其它文本里的 `token=`",并按 base64url 形状校验;
+  - `internal/service.ValidateToken`:用 no-redirect 客户端 `GET /?token=…`——`303/200` ⇒ 有效并 `Navigate` 完成 token→cookie 交换,`401` ⇒ 页内报错可重试,传输错误 ⇒ 提示"无法连接"而**不误判为 token 无效**;
+  - 页面另提供"改用本应用自己的实例"(≥10000 端口自建);页面停留期间不 spawn、不终止对方;token **不落盘、不入日志**。
+- **实例归属记录(`internal/service/endpoint.go`)**:`%LOCALAPPDATA%\dsh-desktop\web-endpoint.json` 存 `{host,port,listenerPid,listenerStartedAt,spawnerPid}`;`Endpoint.Live()` 用**监听 PID + 进程启动时间(±1s)** 判定"是不是本壳启动的"(PID 复用不会误判),`spawnerPid` 用于 `taskkill /T`。
+- **回退端口(`internal/service/ports.go`)**:`PickFreePort(host, 10000)` 在 `[10000,65535]` 取当前可用端口。
+- **HTML 模式窗体桥接(`internal/webview`)**:认证栅栏探测脚本(`__dshAuthRequired`)+ 页面桥接(`__dshTokenTarget`/`__dshSubmitToken`/`__dshSkipToken`/`__dshRetry`);`error.html` 改为可注入原因 + 可重试(不再 `location.reload()`);`loading`/`error`/`token` 全部为内嵌本地页。
+- **`internal/appdir`**:统一 `%LOCALAPPDATA%\dsh-desktop` 状态目录(日志/端点记录),`LOCALAPPDATA` 缺失时回退临时目录。
+- **测试**:`token_test.go`(解析 + 模拟 dsh 闸栏的三种校验结果)、`ports_test.go`、`endpoint_test.go`(含 PID 复用防护)、`internal/ui/ui_test.go`(页面↔桥接契约、页面不加载远端资源)、`internal/webview/shell_test.go`(栅栏脚本与绑定名),以及 config 的 `--url` 派生/token 用例。
+
+### Changed
+- **`--stop-on-exit` 只作用于自有实例**:关闭窗口时**不再**可能停掉用户自己启动（或本壳只是附着）的 dsh 实例;并且终止前必须能**证明归属**——新增 `service.StopOwned` 只接受"记录中的 `listenerPid` + 启动时间仍一致"或"该 PID 是本壳的**直接子进程**"(`procinfo.IsChildOf`),证明不成立时**放弃终止**并记日志,避免 PID 复用误杀无关进程。端点记录新增 `spawnerStartedAt`;`service.Stop` 现在对真正失败的终止返回错误(进程已退出不算失败)。`--stop-on-exit` 遇到附着实例时会在日志里说明"按归属不停止"。
+- **启动流程重构(窗口先建、HTML 页承载交互)**:`main.go` 现在先建窗口并显示 loading,再由后台 goroutine 决策——自有实例复用 / `--url` token 附着 / **非本壳 DSH ⇒ 先按 cookie 附着,取不了验证(栅栏)再转 token 输入页** / 端口被占 ⇒ `[10000,65535]` 自建 / 空闲 ⇒ 首选端口自建;**任何分支都不终止端口占用者**。端口被占时不再弹原生错误框退出(占用者身份改为写入日志),原生 MessageBox 只保留给窗口创建前的失败(单实例/建窗/参数错误)。
+- **认证栅栏自愈**:复用自有实例时若页面命中 `dsh web authentication required`(cookie 失效/过期),自动停掉自有实例并以新 token 重新拉起;**非本壳**实例则转 token 输入页(不再把用户留在 401 文本页)。
+- **`--url` 语义**:未显式指定 `--host`/`--port` 时,`--url` 的 host/port 被采纳(`--url "http://127.0.0.1:34567/?token=…"` 可单独使用);显式端点与 URL 冲突仍报错;URL 必须含显式端口;新增 `Config.URLToken()`/`HostSet`/`PortSet`。
+- `--host 0.0.0.0` 在参数校验阶段即报错(dsh 顶层已拒绝该绑定)。
+- **文档**:`docs/dsh-desktop-prd.md` V1.2 的 FR-01 判据改为 L1/L2/L3 三层(§1.1 补进程形态实测事实、
+  FR-04 归属记录字段与 NFR 安全行同步);**新增两项交互需求**:FR-02 统一为 **HTML 模式窗体**
+  (`loading`/`error`/`token`/`update`/`updating` 内嵌本地页 + `Bind` 桥接,取消原生 MessageBox,
+  仅窗口创建前的参数错误例外),FR-05 改为**取不到验证时显示 HTML token 输入页**(用户粘贴
+  `dsh web` 打印的认证 URL/token 即可附着该实例,或选择改用 ≥10000 端口自有实例,页面停留期间
+  不 spawn、不终止对方);FR-06 的更新询问/进度/失败也改为 HTML 页。`AGENTS.md` 更新目录结构与关键事实。
+- **CLI 文案按系统语言显示中文或英文**:`internal/config` 新增区域检测(`useChineseUI` / 导出的
+  `UseChineseUI`),优先取 `LC_ALL`/`LC_MESSAGES`/`LANG` 环境变量,未设置时回退到 Windows
+  用户界面语言(`GetUserDefaultUILanguage`,主语言为 `LANG_CHINESE` 即判为中文)。据此让:
+  - `--help` 输出中文或英文的用法/选项/默认值文案;
+  - `--check-update` / `--update` 的控制台输出(标题与主要提示)同样按系统语言显示中文或英文。
+- 新增 `internal/config/locale_test.go`,覆盖中文/英文语言 ID 与区域名判定、locale 优先级及
+  `LC_ALL` 覆盖 `LANG` 的行为。
+
 ## [0.2.9] - 2026-09-07
 
 ### Changed

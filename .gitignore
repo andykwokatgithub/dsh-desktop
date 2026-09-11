@@ -11,3 +11,5 @@
 # Editor/OS
 .DS_Store
 Thumbs.db
+# dsh-error-knowledge: keep raw error context (may contain secrets) out of git
+.dsh/error-knowledge/
