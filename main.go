@@ -82,9 +82,10 @@ func main() {
 
 	// FR-02: the window comes first. Its embedded HTML pages carry every startup
 	// interaction, so the decision below can report progress, ask for a token, or
-	// show an error without a native dialog.
+	// show an error without a native dialog. The title carries the running
+	// version so a screenshot of the window identifies the build.
 	view, win, err := singleinstance.NewWindow(singleinstance.WindowOptions{
-		Title:    cfg.WindowTitle,
+		Title:    cfg.WindowTitleText(),
 		Width:    cfg.WindowWidth,
 		Height:   cfg.WindowHeight,
 		DevTools: cfg.DevTools,
@@ -197,8 +198,10 @@ func (a *app) startup() {
 		// Ours but no longer serving: clean the tree up, then decide again. The
 		// kill still has to be proven safe (see service.StopOwned).
 		a.logf("清理自有陈旧实例 %s:%d（listenerPid=%d spawnerPid=%d）", host, port, record.ListenerPID, record.SpawnerPID)
-		if err := service.StopOwned(record, 0, 0); err != nil && !errors.Is(err, service.ErrNotOwned) {
+		if killed, err := service.StopOwned(record, 0, 0); err != nil && !errors.Is(err, service.ErrNotOwned) {
 			a.logf("清理自有陈旧实例失败: %v", err)
+		} else if len(killed) > 0 {
+			a.logf("已清理自有陈旧实例的进程树: %v", killed)
 		}
 		_ = service.ClearEndpoint(a.endpointPath)
 	}
@@ -273,11 +276,18 @@ func (a *app) spawnOwn(prefer int) {
 	if started, err := procinfo.StartTime(child.PID()); err == nil {
 		spawnerStartedAt = started.UnixNano()
 	}
+	// Claim the wrapper the moment it exists, not once the service is ready: a
+	// window closed while the service is still starting must still be able to
+	// stop the instance this shell just created (--stop-on-exit).
+	a.setOwned(child.PID(), spawnerStartedAt, true)
+
 	readyURL, err := service.WaitHealthy(context.Background(), behavior, child)
 	if err != nil {
 		// The child is our direct child, which is itself the proof StopOwned
 		// needs; nothing unrelated can be hit even if the PID is gone already.
-		_ = service.StopOwned(service.Endpoint{}, child.PID(), spawnerStartedAt)
+		// It is gone after this, so release the claim again.
+		_, _ = service.StopOwned(service.Endpoint{}, child.PID(), spawnerStartedAt)
+		a.setOwned(0, 0, false)
 		a.showError("服务启动失败", fmt.Sprintf("%s:%d 未在超时时间内就绪: %v", host, port, err))
 		return
 	}
@@ -294,7 +304,6 @@ func (a *app) spawnOwn(prefer int) {
 	if err := service.SaveEndpoint(a.endpointPath, record); err != nil {
 		a.logf("端点记录写入失败: %v", err)
 	}
-	a.setOwned(child.PID(), spawnerStartedAt, true)
 	a.logf("已启动自有实例 %s:%d（spawnerPid=%d listenerPid=%d）", host, port, child.PID(), listenerPID)
 
 	target := fmt.Sprintf("http://%s:%d", host, port)
@@ -416,7 +425,7 @@ func (a *app) onAuthFence(pageURL string) {
 	// Our own instance lost its cookie: drop it (with proof, see StopOwned) and
 	// start a fresh one so a new token mints a new cookie.
 	record, _ := service.LoadEndpoint(a.endpointPath)
-	if err := service.StopOwned(record, spawnerPID, spawnerStartedAt); err != nil {
+	if _, err := service.StopOwned(record, spawnerPID, spawnerStartedAt); err != nil {
 		a.logf("认证栅栏自愈：未能证明可安全终止旧实例（%v），保留它并另起新实例", err)
 	}
 	_ = service.ClearEndpoint(a.endpointPath)
@@ -436,25 +445,36 @@ func (a *app) showError(title, detail string) {
 // a dsh the user launched themselves (or attached to with a token) is never
 // stopped, and even our own instance is only killed when its identity can be
 // proven (see service.StopOwned).
+//
+// "Ours" is decided from the in-memory spawn of this session *or* from the
+// endpoint record, whose wrapper PID is the durable half: that keeps a
+// re-launched shell able to stop the instance its previous run started, which is
+// exactly what --stop-on-exit promises.
 func (a *app) shutdown() {
+	if !a.cfg.StopOnExit {
+		return
+	}
 	a.mu.Lock()
 	spawnerPID, spawnerStartedAt, owned := a.spawnerPID, a.spawnerStartedAt, a.owned
 	a.mu.Unlock()
 
-	if !a.cfg.StopOnExit {
-		return
-	}
-	if !owned {
+	record, hasRecord := service.LoadEndpoint(a.endpointPath)
+	if !owned && !(hasRecord && record.Owned()) {
 		a.logf("--stop-on-exit 已设置，但当前使用的是非本壳启动的实例：按其归属不予停止")
 		return
 	}
-	record, _ := service.LoadEndpoint(a.endpointPath)
-	switch err := service.StopOwned(record, spawnerPID, spawnerStartedAt); {
-	case err == nil:
+
+	killed, err := service.StopOwned(record, spawnerPID, spawnerStartedAt)
+	switch {
+	case err == nil && len(killed) > 0:
 		_ = service.ClearEndpoint(a.endpointPath)
-		a.logf("已按 --stop-on-exit 停止自有实例（listenerPid=%d spawnerPid=%d）", record.ListenerPID, spawnerPID)
+		a.logf("已按 --stop-on-exit 停止自有实例（listenerPid=%d spawnerPid=%d 终止进程=%v）",
+			record.ListenerPID, spawnerPID, killed)
+	case err == nil:
+		a.logf("--stop-on-exit：自有实例已退出，无需停止（listenerPid=%d spawnerPid=%d）", record.ListenerPID, spawnerPID)
 	case errors.Is(err, service.ErrNotOwned):
-		a.logf("--stop-on-exit 未能证明可安全终止自有实例；为安全计未终止任何进程")
+		a.logf("--stop-on-exit 未能证明可安全终止自有实例（listenerPid=%d spawnerPid=%d）；为安全计未终止任何进程",
+			record.ListenerPID, spawnerPID)
 	default:
 		a.logf("--stop-on-exit 停止自有实例失败: %v", err)
 	}

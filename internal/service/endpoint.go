@@ -94,6 +94,24 @@ func (e Endpoint) Live(host string, port int) bool {
 	return processAliveAt(e.ListenerPID, e.ListenerStartedAt)
 }
 
+// Owned reports whether the record still identifies an instance this shell
+// started, which is the gate --stop-on-exit checks before it tries to stop
+// anything.
+//
+// The wrapper is the durable half of the record and the listener the volatile
+// one: the cmd.exe wrapper this shell spawned stays alive for the whole life of
+// the instance, while the process that serves the port can be restarted (with a
+// new PID) inside the same tree. So a record is ownable when either is provable
+// -- the wrapper is a direct child of this process or is still alive at the
+// creation time recorded beside it, or the listener is still alive at its
+// recorded creation time.
+func (e Endpoint) Owned() bool {
+	if processAliveAt(e.SpawnerPID, e.SpawnerStartedAt) || procinfo.IsChildOf(e.SpawnerPID, os.Getpid()) {
+		return true
+	}
+	return e.Live(e.Host, e.Port)
+}
+
 // ListenerMemory resolves the identity of the process currently listening on
 // host:port, for the record written right after a successful spawn. It returns
 // zeroes when the owner cannot be read, which makes the record non-authoritative
@@ -110,9 +128,16 @@ func ListenerMemory(host string, port int) (pid int, startedAt int64) {
 	return owner, started.UnixNano()
 }
 
-// processAliveAt reports whether pid exists and was created at startedAt (Unix
-// nanoseconds, within StartTimeTolerance).
+// processAliveAt reports whether pid is a running process created at startedAt
+// (Unix nanoseconds, within StartTimeTolerance).
+//
+// The creation time is the anti-PID-reuse guard; the exit check is the
+// anti-zombie guard (a process object with an open handle can outlive its
+// process -- see procinfo.Exited).
 func processAliveAt(pid int, startedAt int64) bool {
+	if pid <= 0 || startedAt == 0 {
+		return false
+	}
 	got, err := procinfo.StartTime(pid)
 	if err != nil {
 		return false
@@ -121,45 +146,105 @@ func processAliveAt(pid int, startedAt int64) bool {
 	if diff < 0 {
 		diff = -diff
 	}
-	return diff <= int64(StartTimeTolerance)
+	if diff > int64(StartTimeTolerance) {
+		return false
+	}
+	exited, err := procinfo.Exited(pid)
+	if err != nil {
+		return false // unreadable is not proof of ownership
+	}
+	return !exited
 }
 
-// ErrNotOwned is returned when a stop request is refused because the PID cannot
-// be proven to belong to a process this shell started.
+// ErrNotOwned is returned when a stop request is refused because the endpoint is
+// still served but no process behind it can be proven to be one this shell
+// started.
 var ErrNotOwned = errors.New("service: refusing to stop a process this shell cannot prove it started")
 
-// StopOwned stops one of this shell's own dsh web instances and never anything
-// else -- in particular, an instance the user started themselves is left alone
-// even when --stop-on-exit is set.
+// StopOwned stops dsh web instances this shell started and never anything else --
+// in particular, an instance the user started themselves is left alone even when
+// --stop-on-exit is set.
 //
-// Proof is required before killing, because a PID only means something while the
-// process it named is alive and Windows recycles PIDs: killing a stale PID could
-// take down an unrelated process.
+// Ownership is a lineage, not one PID. The primary target is therefore the
+// cmd.exe wrapper this shell spawned (spawnerPid): it stays alive for the whole
+// life of the instance, and killing its tree (/T) takes down whatever serves the
+// endpoint even when the serving process changed PID since the record was
+// written. The recorded listener is a second target, for an instance whose
+// wrapper is already gone.
 //
-//   - A recorded listener is the only authority for its PID: when the record
-//     still matches it (PID + creation time) it is stopped, and when it does not
-//     the PID is treated as gone and nothing is killed.
-//   - With no recorded listener (the service never became ready, or its owner
-//     could not be read at spawn time) the cmd.exe wrapper is used instead, and
-//     it must be provable: a direct child of this shell, or still the process
-//     whose creation time the record captured.
-func StopOwned(record Endpoint, sessionSpawnerPID int, sessionSpawnerStartedAt int64) error {
-	if record.ListenerPID > 0 {
-		if record.Live(record.Host, record.Port) {
-			return Stop(record.ListenerPID)
-		}
-		return nil
+// Proof is required before any kill, because a PID only means something while the
+// process it named is alive and Windows recycles PIDs:
+//
+//   - The wrapper is proven when it is a direct child of this shell (an instance
+//     spawned in this session) or when it is still running at the creation time
+//     recorded next to it (an instance spawned by an earlier run of this shell).
+//   - The listener is proven when it is still running at its recorded creation
+//     time.
+//
+// It returns the PIDs whose trees were terminated. A live endpoint with no
+// provable owner yields ErrNotOwned -- the caller says so instead of claiming a
+// stop that never happened -- and an instance that is already gone yields no PIDs
+// and no error.
+func StopOwned(record Endpoint, sessionSpawnerPID int, sessionSpawnerStartedAt int64) ([]int, error) {
+	spawnerPID, spawnerStartedAt := record.SpawnerPID, record.SpawnerStartedAt
+	if sessionSpawnerPID > 0 {
+		spawnerPID, spawnerStartedAt = sessionSpawnerPID, sessionSpawnerStartedAt
 	}
 
-	pid, startedAt := record.SpawnerPID, record.SpawnerStartedAt
-	if sessionSpawnerPID > 0 {
-		pid, startedAt = sessionSpawnerPID, sessionSpawnerStartedAt
+	provenSpawner := 0
+	if spawnerPID > 0 && (procinfo.IsChildOf(spawnerPID, os.Getpid()) || processAliveAt(spawnerPID, spawnerStartedAt)) {
+		provenSpawner = spawnerPID
 	}
-	if pid <= 0 {
-		return nil
+
+	var targets []int
+	add := func(pid int) {
+		if pid <= 0 {
+			return
+		}
+		// Only a process that is still running is a stop target: a PID that has
+		// already exited (its object can outlive it while a handle is open) would
+		// otherwise be reported as "terminated" without anything being stopped.
+		if exited, err := procinfo.Exited(pid); err != nil || exited {
+			return
+		}
+		for _, t := range targets {
+			if t == pid {
+				return
+			}
+		}
+		targets = append(targets, pid)
 	}
-	if !procinfo.IsChildOf(pid, os.Getpid()) && !processAliveAt(pid, startedAt) {
-		return ErrNotOwned
+	add(provenSpawner)
+	if record.ListenerPID > 0 && record.Live(record.Host, record.Port) {
+		add(record.ListenerPID)
 	}
-	return Stop(pid)
+	// Whatever serves the recorded endpoint right now, when it lives inside the
+	// tree we proved: a server that restarted under our own wrapper has a new PID
+	// that the record cannot know about.
+	if provenSpawner > 0 && record.Port > 0 {
+		if owner, err := procinfo.ListenerPID(record.Host, record.Port); err == nil && owner > 0 {
+			if procinfo.IsDescendantOf(owner, provenSpawner) {
+				add(owner)
+			}
+		}
+	}
+
+	if len(targets) == 0 {
+		// No proof: refuse when something still answers on the recorded endpoint,
+		// and report "already gone" when nothing does.
+		if record.Port > 0 {
+			if owner, err := procinfo.ListenerPID(record.Host, record.Port); err == nil && owner > 0 {
+				return nil, ErrNotOwned
+			}
+		}
+		return nil, nil
+	}
+
+	var firstErr error
+	for _, pid := range targets {
+		if err := Stop(pid); err != nil && firstErr == nil {
+			firstErr = err
+		}
+	}
+	return targets, firstErr
 }

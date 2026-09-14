@@ -166,14 +166,14 @@ dsh-desktop
 | `--host` | `127.0.0.1` | 健康探测与 spawn 的绑定 host(校验阶段即拒绝 `0.0.0.0`) |
 | `--port` | `3080` | `dsh web` 的监听端口(1-65535);被非 dsh 进程占用时自动改用 `10000-65535` 的空闲端口 |
 | `--command` | `web` | 要 spawn 的 `dsh` 子命令(`web` = `--profile web` 别名) |
-| `--stop-on-exit` | `false` | 关闭窗口时是否同时停止 dsh 服务(默认保留,二次启动更快)。只停**本壳自己的、归属可证**的实例;附着或他人启动的实例**永不**停止 |
+| `--stop-on-exit` | `false` | 关闭窗口时是否同时停止 dsh 服务(默认保留,二次启动更快)。只停**本壳自己的、归属可证**的实例(含本壳**上一次**运行启动的实例);附着或他人启动的实例**永不**停止 |
 | `--devtools` | `false` | 开启 WebView2 开发者工具(安全默认:关闭) |
 | `--context-menu` | `true` | 保留 WebView2 默认右键菜单(默认开启;如需禁用传 `--context-menu=false`) |
 | `--startup-timeout` | `30` | 等待服务就绪的超时(秒,须>0) |
 | `--poll-ms` | `500` | 健康校验轮询间隔(毫秒,须>0) |
 | `--width` | `1200` | 窗口宽度(须>0) |
 | `--height` | `800` | 窗口高度(须>0) |
-| `--title` | `DeepSeek Harness` | 窗口标题(仅用于显示;单实例定位不依赖标题) |
+| `--title` | `DeepSeek Harness Desktop {version}` | 窗口标题(仅用于显示;单实例定位不依赖标题)。默认带 `{version}` 占位符,展开为运行时版本(如 `DeepSeek Harness Desktop 0.3.0`);自定义标题不含占位符时**原样显示**,需要显示版本就自己写上 `{version}` |
 | `--version` | `false` | 打印版本并退出 |
 | `--check-update` | `false` | 检查 GitHub Releases 是否有新版本并退出 |
 | `--update` | `false` | 下载并应用最新版本,然后退出 |
@@ -194,7 +194,7 @@ dsh-desktop
 
 | 层 | 判据 | 命中后的行为 |
 | :-- | :-- | :-- |
-| **L1 归属记录** | `%LOCALAPPDATA%\dsh-desktop\web-endpoint.json` 里的 `listenerPid` + 进程启动时间(±1s)仍与当前监听者一致 ⇒ 是**本壳自己**启动的 | 健康则直接复用(带持久化 cookie) |
+| **L1 归属记录** | `%LOCALAPPDATA%\dsh-desktop\web-endpoint.json`:`spawnerPid`(本壳 spawn 的 `cmd.exe` 包装器)是**本壳直接子进程**或仍以记录中的启动时间在运行 ⇒ 肯定是本壳启动的;`listenerPid` + 进程启动时间(±1s)仍与当前监听者一致也判定为本壳启动的 | 健康则直接复用(带持久化 cookie) |
 | **L2 强证据** | 监听 PID 的命令行含 `@deepseek-ai\dsh`/`deepseek-harness`/`dsh web`/`…\dsh\lib\bin.js` 等强关键字 | 健康则先按 cookie 附着;取不到验证转 token 输入页 |
 | **L3 弱证据** | 裸 `dsh`、`--port <该端口>` 这类弱关键字(本壳自身的 `dsh-desktop.exe --port …` 也会命中) | 不足以判定为 dsh,只作参考 |
 
@@ -204,9 +204,13 @@ dsh-desktop
   `QueryFullProcessImageNameW` 取镜像、`NtQueryInformationProcess` 取命令行),**不解析 `netstat` 文本**、
   不 spawn PowerShell/CIM;HTTP 侧认 dsh 的**认证边界**(`200`/`303`,或 `401` + 认证栅栏文案),
   不是"只看 200"。
-- **终止进程必须有证明**:`--stop-on-exit` 与认证栅栏自愈都走 `service.StopOwned`,只接受
-  "记录中的监听 PID + 启动时间仍一致"或"该 PID 是本壳的**直接子进程**";证明不成立就**放弃终止**并记日志
-  (宁可不杀,也不误杀)。
+- **终止进程必须有证明**:`--stop-on-exit` 与认证栅栏自愈都走 `service.StopOwned`。归属是**一条血脉**,
+  不是单个 PID:主目标是本壳 spawn 的 `cmd.exe` **包装器进程树**(`spawnerPid`)——它随实例终生存在,
+  `taskkill /T` 能连带干掉当前真正服务端口的进程(哪怕服务进程换了 PID、记录里的监听 PID 已过期);
+  记录中的监听 PID 作为第二目标。终止前必须有证明:包装器是**本壳的直接子进程**(本次启动),或它仍以
+  **记录中的启动时间**在运行(上一次启动,跨会话可证);监听 PID 则以"记录中的启动时间仍一致"为证。
+  证明不成立就**放弃终止**并如实记日志——但**绝不假装成功**:端口上仍有实例而无法证明归属时报
+  `ErrNotOwned`,实例已退出则记"无需停止"(宁可不杀,也不误杀)。
 - **任何分支都不终止端口占用者**:端口被别人占用时只换端口,不做抢占或清理。
 - **token 是凭据**:只在页面 → Go → `Navigate(?token=…)` 之间于内存流转,**不落盘、不入日志**;
   日志只记 `host:port` 与占用者身份。

@@ -18,7 +18,7 @@ var zhFlagUsage = map[string]string{
 	"poll-ms":         "健康检查轮询间隔 (毫秒, 须 > 0)",
 	"width":           "窗口宽度 (须 > 0)",
 	"height":          "窗口高度 (须 > 0)",
-	"title":           "窗口标题",
+	"title":           "窗口标题 (支持 {version} 占位符; 默认在标题中显示当前版本)",
 	"version":         "打印版本并退出",
 	"check-update":    "检查 GitHub Releases 是否有新版本并退出",
 	"update":          "下载并应用最新版本, 然后退出",

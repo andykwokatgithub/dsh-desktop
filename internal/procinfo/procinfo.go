@@ -39,6 +39,11 @@ const (
 
 	// fallbackCommandLineBytes is used when the size query reports nothing.
 	fallbackCommandLineBytes = 8 << 10
+
+	// maxAncestorDepth bounds the parent-chain walk. A dsh instance is a handful
+	// of levels deep (shell -> cmd.exe -> node.exe -> workers), so eight is more
+	// than enough and keeps a broken/corrupt chain from turning into a long walk.
+	maxAncestorDepth = 8
 )
 
 var (
@@ -163,6 +168,48 @@ func IsChildOf(pid, parent int) bool {
 	}
 	got, err := ParentPID(pid)
 	return err == nil && got == parent
+}
+
+// IsDescendantOf reports whether pid is a (possibly distant) descendant of
+// ancestor, following the kernel's parent links. It answers the same question as
+// IsChildOf one or more levels down -- useful when the process that ends up doing
+// the work is a grandchild of the one we spawned -- and, like IsChildOf, it is a
+// statement about the current process tree, so a reused PID cannot fake it.
+func IsDescendantOf(pid, ancestor int) bool {
+	if pid <= 0 || ancestor <= 0 || pid == ancestor {
+		return false
+	}
+	for _, e := range Ancestors(pid, maxAncestorDepth) {
+		if e.ParentPID == ancestor {
+			return true
+		}
+	}
+	return false
+}
+
+// Exited reports whether pid has already terminated.
+//
+// It exists because "the PID still resolves" is not the same as "the process
+// still runs": a process object outlives its process while any handle to it is
+// open, and Go's os/exec keeps a handle for every child it starts -- so a dead
+// wrapper can still answer OpenProcess, GetProcessTimes and even a taskkill
+// "failure". Waiting on the handle is what actually distinguishes the two.
+//
+// A process that cannot be opened returns an error, which callers must read as
+// "unknown" rather than as "exited", so an unreadable process is never mistaken
+// for a stopped one.
+func Exited(pid int) (bool, error) {
+	h, err := openProcess(pid, windows.PROCESS_QUERY_LIMITED_INFORMATION|windows.SYNCHRONIZE)
+	if err != nil {
+		return false, err
+	}
+	defer windows.CloseHandle(h)
+
+	event, err := windows.WaitForSingleObject(h, 0)
+	if err != nil {
+		return false, err
+	}
+	return event == windows.WAIT_OBJECT_0, nil
 }
 
 // ImagePath returns the fully-qualified executable path of pid.

@@ -3,6 +3,7 @@ package procinfo
 import (
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -130,6 +131,68 @@ func TestIsChildOf(t *testing.T) {
 	}
 	if IsChildOf(self, self+1_000_000) {
 		t.Fatal("an unrelated parent must not be accepted")
+	}
+}
+
+// TestIsDescendantOf walks the same proof one level deeper: the process that
+// ends up serving the endpoint can be a grandchild of the wrapper we spawned.
+func TestIsDescendantOf(t *testing.T) {
+	self := os.Getpid()
+	parent, err := ParentPID(self)
+	if err != nil {
+		t.Fatalf("ParentPID: %v", err)
+	}
+	if !IsDescendantOf(self, parent) {
+		t.Fatalf("IsDescendantOf(%d, %d) = false, want true", self, parent)
+	}
+	if IsDescendantOf(self, self) {
+		t.Fatal("a process must not count as its own descendant")
+	}
+	if IsDescendantOf(0, parent) || IsDescendantOf(self, 0) {
+		t.Fatal("invalid PIDs must never be accepted")
+	}
+	if IsDescendantOf(self, self+1_000_000) {
+		t.Fatal("an unrelated ancestor must not be accepted")
+	}
+}
+
+// TestExitedOwnProcess pins the liveness check that keeps a process object with
+// an open handle (a dead child Go has not reaped) from being read as running.
+func TestExitedOwnProcess(t *testing.T) {
+	exited, err := Exited(os.Getpid())
+	if err != nil {
+		t.Fatalf("Exited(self): %v", err)
+	}
+	if exited {
+		t.Fatal("this test process must not report as exited")
+	}
+
+	// A child that has certainly finished, whose handle this process still holds
+	// (no Wait) -- the exact state a spawned wrapper can be left in. The PID keeps
+	// resolving, so only the handle wait can tell that it is gone.
+	child := exec.Command("cmd", "/c", "exit 0")
+	if err := child.Start(); err != nil {
+		t.Skipf("cannot start a throwaway child: %v", err)
+	}
+	defer func() {
+		_ = child.Process.Kill()
+		_, _ = child.Process.Wait()
+	}()
+
+	deadline := time.Now().Add(10 * time.Second)
+	for {
+		exited, err := Exited(child.Process.Pid)
+		if err == nil && exited {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("Exited(child pid=%d) = (%v, %v), want true", child.Process.Pid, exited, err)
+		}
+		time.Sleep(50 * time.Millisecond)
+	}
+
+	if _, err := Exited(-1); err == nil {
+		t.Fatal("an invalid PID must be an error, not a verdict")
 	}
 }
 

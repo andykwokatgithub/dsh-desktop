@@ -227,6 +227,12 @@ func Stop(pid int) error {
 	if _, err := procinfo.StartTime(pid); err != nil {
 		return nil // the process is gone; nothing to report
 	}
+	// The PID still resolves, but that alone does not mean it still runs: a
+	// process object stays readable while a handle to it is open (see
+	// procinfo.Exited), and taskkill fails on a process that is already gone.
+	if exited, err := procinfo.Exited(pid); err == nil && exited {
+		return nil
+	}
 	return fmt.Errorf("service: taskkill %d failed", pid)
 }
 

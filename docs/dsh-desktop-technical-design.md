@@ -21,7 +21,7 @@
 | :-- | :-- | :-- | :-- |
 | D1 | 生命周期 | **服务持久化复用 + 复用前健康校验 + 主动停止**；提供"关闭窗口即退出"配置项 | 保留 AC-03 意图，同时补齐停止/陈旧恢复；两种仅影响驻留与二次速度 |
 | D2 | 命名空间 | **`Local\DSHDesktopApp`** | 避免 `Global\` 跨会话导致多用户/RDP 第二个用户无法启动；文档记录取舍 |
-| D3 | 单实例定位 | **唯一原生窗口类** + `RegisterWindowMessage` 消息驱动激活（不靠窗口标题） | 标题会随页面 `<title>` 变化，类名/消息定位更稳 |
+| D3 | 单实例定位 | **唯一原生窗口类** + `RegisterWindowMessage` 消息驱动激活（不靠窗口标题） | 标题是用户可配置的显示字段（`--title`，默认带 `{version}`），不保证唯一；类名/消息定位更稳 |
 | D4 | 服务判据 | **端口 + HTTP 200 健康校验**双判据 | 区分"dsh 在跑"与"其它进程占端口 / 僵死" |
 | D5 | 服务就绪 | 轮询健康校验 + 捕获 `dsh web: <url>` stdout 行 | 避免 TCP 可连但前端/`/api` 未就绪的白屏 |
 | D6 | Windows spawn | 经 `cmd /c` 解析 npm shim（`.cmd`/`.ps1`），继承 `PATH`/`DSH_HOME` | Go `os/exec` 不按 PATHEXT 解析 `.cmd` |
@@ -197,12 +197,12 @@ view.Init(securityInit)      // 注入安全脚本(右键/外链拦截,见 inter
 view.SetHtml(loadingHTML)    // 先加载占位页(go:embed)
 // 服务健康后跳转
 view.Navigate("http://127.0.0.1:3080")
-// 页面加载后复核标题（WebView2 可能随 <title> 改动,本期见 PRD FR-02 备注）
+// 页面加载后无需复核标题（实测页面 <title> 不改写原生标题,见下）
 view.Run() // 主循环（阻塞）
 ```
 
 - **加载态/错误态**：`ui/loading.html` 与 `ui/error.html` 用 `go:embed` 打包；健康校验**成功前**先加载 loading，**失败超时**后加载 error（含"重试/端口冲突/dsh 未安装/WebView2 未安装"递进提示）。
-- **标题**：`SetTitle` 复核，保证 AC-04；不用于单实例定位（D3）。
+- **标题**：建窗时一次性取 `config.Config.WindowTitleText()`（默认模板 `DeepSeek Harness Desktop {version}` ⇒ `DeepSeek Harness Desktop 0.3.0`），保证 AC-04；`--title` 支持 `{version}` 占位符，不含占位符时原样显示。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，页面 `<title>`（loading/error/token 页）**不会**改写原生标题，故不需要加载后 `SetTitle` 复核。标题不用于单实例定位（D3）。
 
 ### 4.4 服务生命周期（FR-04）
 
@@ -229,6 +229,11 @@ OnStart():                     // 每次启动
         Spawn(...)
 ```
 - 陈旧检测可加"PID 是否存活 / `dsh --version` 比对 / 进程启动时间戳"辅助。
+- **实现补充（停归属，见 PRD FR-04）**：`KillTree` 的目标不是"记录里的监听 PID"而是**本壳 spawn 的
+  `cmd.exe` 包装器进程树**（`spawnerPid`）：真正服务端口的进程可能换 PID，而包装器随实例终生存在，
+  `taskkill /F /T` 连带终止当前服务。终止前必须先证明归属（包装器是本壳直接子进程，或包装器/监听者仍以
+  记录中的启动时间在运行，且进程**未退出**——`procinfo.Exited`）；证明不成立就放弃，且**不得把"没停"记成
+  "已停止"`。`main.go` 的关窗路径据此区分"已停止（列出被终止 PID）"/"无需停止"/"证明不足，已放弃"。
 - 主动停止：托盘/菜单提供"退出（保留服务）"与"退出并停止服务"两个动作（见 PRD §10 托盘）。
 
 ### 4.5 加载态/错误态（FR-02）

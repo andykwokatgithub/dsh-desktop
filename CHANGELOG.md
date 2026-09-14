@@ -5,6 +5,31 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [Unreleased]
+
+### Added
+- **窗口标题显示当前版本**:默认标题模板改为 `DeepSeek Harness Desktop {version}`,窗口标题栏(与任务栏)
+  显示如 `DeepSeek Harness Desktop 0.3.0`,`{version}` 展开为运行时版本(`internal/config.Version`,可被
+  `-ldflags -X` 覆盖后同步变化)。`--title` 支持 `{version}` 占位符;自定义标题若不含占位符则**原样显示**
+  (不强行追加版本),空/空白标题回退为默认标题。解析集中在 `config.Config.WindowTitleText()`,`main.go`
+  建窗时使用;`--help` 中文文案与 README 配置表同步更新。
+
+### Fixed
+- **`--stop-on-exit` 现在真的会关掉自有实例（此前可能"日志说已停止、实例仍在跑"）**:旧实现把归属全押在
+  **记录中的 `listenerPid`** 上——一旦真正服务端口的进程换了 PID（服务重启/再次派生）或记录过期，
+  `StopOwned` 会直接 `return nil`，关窗逻辑据此记下"已按 --stop-on-exit 停止自有实例"，而实例与端口原封
+  不动（实测复现）。现在归属按**血脉**判定:主目标是本壳 spawn 的 `cmd.exe` **包装器进程树**
+  （`spawnerPid`，随实例终生存在，`taskkill /F /T` 会连带终止当前服务端口的进程，哪怕它换了 PID），
+  记录中的 `listenerPid` 作为第二目标；本次会话判为自有而记录不可用时，仍以"包装器是本壳直接子进程"
+  为证终止。结果也不再含糊:端口上仍有实例却证明不了归属 ⇒ 返回 `ErrNotOwned`、**放弃终止**并记日志;
+  实例确已退出 ⇒ 记"无需停止"；成功时日志列出被终止的 PID。`Endpoint` 新增 `Owned()` 作为
+  `--stop-on-exit` 的准入闸门（本次 spawn 的内存归属 **或** 记录可证）。
+- **已退出但句柄未关的进程不再被当作"存活"**:新增 `procinfo.Exited`（`WaitForSingleObject` 等句柄）——
+  进程对象会因句柄未关而在进程死后继续应答 `OpenProcess`/`GetProcessTimes`，而 Go 的 `os/exec` 为每个
+  子进程保留句柄。`processAliveAt` 现在同时要求"启动时间一致"且"进程未退出"，`service.Stop` 也不再对
+  这类目标报出虚假的 `taskkill failed`（日志里出现过的那类错误）。新增 `procinfo.IsDescendantOf`，用于
+  "当前监听者仍在本壳包装器进程树内"的判定。
+
 ## [0.3.0] - 2026-09-11
 
 ### Added

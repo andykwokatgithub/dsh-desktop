@@ -1,6 +1,7 @@
 package config
 
 import (
+	"strings"
 	"testing"
 	"time"
 )
@@ -102,6 +103,10 @@ func TestParseFlags(t *testing.T) {
 	if cfg.WindowTitle != "My Harness" {
 		t.Fatalf("WindowTitle = %q, want %q", cfg.WindowTitle, "My Harness")
 	}
+	// An explicit --title without the placeholder is shown verbatim.
+	if got := cfg.WindowTitleText(); got != "My Harness" {
+		t.Fatalf("WindowTitleText() = %q, want %q", got, "My Harness")
+	}
 	// URL override must match host:port after flags are applied.
 	if cfg.URL != "http://127.0.0.1:4000" {
 		t.Fatalf("URL = %q, want %q", cfg.URL, "http://127.0.0.1:4000")
@@ -122,6 +127,47 @@ func TestParseFlags(t *testing.T) {
 	}
 	if !cfg.PortSet {
 		t.Fatal("PortSet = false, want true when --port is written")
+	}
+}
+
+// TestWindowTitleText covers the default title template: the window title bar
+// shows the running version, while an explicit --title stays verbatim unless it
+// opts in with the {version} placeholder.
+func TestWindowTitleText(t *testing.T) {
+	cases := []struct {
+		name  string
+		title string
+		want  string
+	}{
+		{"default template", DefaultWindowTitle(), DefaultWindowTitleBase + " " + TitleVersion()},
+		{"placeholder expanded", "My Harness {version}", "My Harness " + TitleVersion()},
+		{"placeholder twice", "{version} / {version}", TitleVersion() + " / " + TitleVersion()},
+		{"verbatim without placeholder", "My Harness", "My Harness"},
+		{"verbatim with literal version", "My Harness 0.3.0", "My Harness 0.3.0"},
+		{"surrounding whitespace trimmed", "  My Harness {version}  ", "My Harness " + TitleVersion()},
+		{"blank falls back to default", "   ", DefaultWindowTitleBase + " " + TitleVersion()},
+		{"empty falls back to default", "", DefaultWindowTitleBase + " " + TitleVersion()},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			c := Default()
+			c.WindowTitle = tc.title
+			if got := c.WindowTitleText(); got != tc.want {
+				t.Fatalf("WindowTitleText() = %q, want %q", got, tc.want)
+			}
+		})
+	}
+
+	// A parsed run with no flags gets the versioned default title.
+	cfg, err := Parse(nil)
+	if err != nil {
+		t.Fatalf("Parse() error: %v", err)
+	}
+	if got := cfg.WindowTitleText(); got != DefaultWindowTitleBase+" "+TitleVersion() {
+		t.Fatalf("default title = %q, want %q", got, DefaultWindowTitleBase+" "+TitleVersion())
+	}
+	if !strings.Contains(cfg.WindowTitleText(), Version) {
+		t.Fatalf("default title %q must contain the running version %q", cfg.WindowTitleText(), Version)
 	}
 }
 

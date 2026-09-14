@@ -15,6 +15,27 @@ import (
 //	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.3.0" .
 var Version = "0.3.0"
 
+// TitleVersion is the version token shown in the window title: the bare version
+// ("0.3.0"), matching what --version prints.
+func TitleVersion() string {
+	return Version
+}
+
+// TitleVersionPlaceholder is the placeholder --title may contain; it is expanded
+// to TitleVersion(). The default window title ends with it, so the window title
+// bar always shows the running version.
+const TitleVersionPlaceholder = "{version}"
+
+// DefaultWindowTitleBase is the product part of the default title.
+const DefaultWindowTitleBase = "DeepSeek Harness Desktop"
+
+// DefaultWindowTitle is the default --title template: the window title bar (and
+// taskbar entry) shows the running version, which is what users quote in bug
+// reports and screenshots.
+func DefaultWindowTitle() string {
+	return DefaultWindowTitleBase + " " + TitleVersionPlaceholder
+}
+
 // Config is the fully-resolved runtime configuration.
 type Config struct {
 	Host              string // bind host used by the health probe and dsh spawn
@@ -27,10 +48,10 @@ type Config struct {
 	PollIntervalMS    int    // health-check polling interval (ms)
 	WindowWidth       int
 	WindowHeight      int
-	WindowTitle       string
-	ShowVersion       bool // print the version and exit
-	CheckUpdate       bool // check GitHub Releases for a newer version and exit
-	Update            bool // download + apply a newer version and exit
+	WindowTitle       string // raw --title template (may contain {version})
+	ShowVersion       bool   // print the version and exit
+	CheckUpdate       bool   // check GitHub Releases for a newer version and exit
+	Update            bool   // download + apply a newer version and exit
 
 	// URL is an optional explicit target: the dsh web URL, optionally carrying
 	// the process launch token ("http://127.0.0.1:3080/?token=..."). Its host and
@@ -65,12 +86,12 @@ func Default() Config {
 		Command:           "web",
 		StopOnExit:        false, // D1: persist the service across window closes
 		DevTools:          false, // D7: safe default
-		ContextMenu:       true, // leave the WebView2 context menu enabled by default (opt-out via --context-menu=false)
+		ContextMenu:       true,  // leave the WebView2 context menu enabled by default (opt-out via --context-menu=false)
 		StartupTimeoutSec: 30,
 		PollIntervalMS:    500,
 		WindowWidth:       1200,
 		WindowHeight:      800,
-		WindowTitle:       "DeepSeek Harness",
+		WindowTitle:       DefaultWindowTitle(),
 	}
 }
 
@@ -87,6 +108,26 @@ func (c *Config) PageURL() string {
 		return c.URL
 	}
 	return c.CanonicalURL()
+}
+
+// WindowTitleText resolves the raw --title template into the string the window
+// title bar actually shows: every "{version}" placeholder becomes the running
+// version. The default template ends with it, so "out of the box" the title
+// reads "DeepSeek Harness Desktop 0.3.0" and users can quote the version they run.
+//
+// A --title without the placeholder is honored verbatim (the user asked for that
+// exact title), and an empty/blank --title falls back to the default base plus
+// the version rather than leaving the window without a caption.
+func (c *Config) WindowTitleText() string {
+	base := strings.TrimSpace(c.WindowTitle)
+	if base == "" {
+		return DefaultWindowTitleBase + " " + TitleVersion()
+	}
+	if !strings.Contains(base, TitleVersionPlaceholder) {
+		return base
+	}
+	// Collapse the whitespace a template like "Harness {version} " would leave.
+	return strings.TrimSpace(strings.ReplaceAll(base, TitleVersionPlaceholder, TitleVersion()))
 }
 
 // StartupTimeoutDuration converts the seconds flag into a time.Duration.
@@ -113,7 +154,7 @@ func Parse(args []string) (*Config, error) {
 	fs.IntVar(&cfg.PollIntervalMS, "poll-ms", cfg.PollIntervalMS, "health-check polling interval (ms)")
 	fs.IntVar(&cfg.WindowWidth, "width", cfg.WindowWidth, "window width")
 	fs.IntVar(&cfg.WindowHeight, "height", cfg.WindowHeight, "window height")
-	fs.StringVar(&cfg.WindowTitle, "title", cfg.WindowTitle, "window title")
+	fs.StringVar(&cfg.WindowTitle, "title", cfg.WindowTitle, "window title ({version} expands to the running version)")
 	fs.BoolVar(&cfg.ShowVersion, "version", false, "print version and exit")
 	fs.BoolVar(&cfg.CheckUpdate, "check-update", false, "check GitHub Releases for a newer version and exit")
 	fs.BoolVar(&cfg.Update, "update", false, "download and apply the latest release, then exit")
