@@ -34,7 +34,7 @@
 go build -o dsh-desktop.exe .
 
 # 看版本
-go run . -version        # -> dsh-desktop 0.3.0
+go run . -version        # -> dsh-desktop 0.3.1
 
 # 静态检查
 go vet ./...
@@ -71,7 +71,7 @@ CHANGELOG.md                       变更日志(Keep a Changelog)
 - `webview_go.NewWindow(debug, parentHwnd)` 可以把 WebView2 嵌进**你自己创建的原生窗口**,从而用"唯一窗口类 + 注册消息"做单实例定位(而不是靠窗口标题)。这正是 `internal/singleinstance` 的做法。
 - 图标管线:`assets/deepseek.ico`(16–256px)→ `rsrc` 生成 `rsrc_windows_amd64.syso` → `go build` 自动链接。`build.ps1` 在 `.ico` 比 `.syso` 新时自动重跑 `go run github.com/akavel/rsrc@latest ...`。
 - 主窗体也显示图标:窗口类上设 `hIcon/hIconSm` + 发 `WM_SETICON`(见 `window.go` 的 `loadImageIcon`)。
-- **窗口标题默认显示当前版本**:`--title` 默认模板为 `DeepSeek Harness Desktop {version}`,`config.Config.WindowTitleText()` 把 `{version}` 展开成 `<Version>`(⇒ `DeepSeek Harness Desktop 0.3.0`),`main.go` 建窗时用它;自定义 `--title` 不含占位符时**原样显示**(不强行追加版本),空/空白标题回退默认。webview_go **不订阅** WebView2 的 `DocumentTitleChanged`,内嵌页(`loading/error/token.html`)的 `<title>` **不会**改写原生标题,因此不需要"页面加载后复核标题"。
+- **窗口标题默认显示当前版本**:`--title` 默认模板为 `DeepSeek Harness Desktop {version}`,`config.Config.WindowTitleText()` 把 `{version}` 展开成 `<Version>`(⇒ `DeepSeek Harness Desktop 0.3.1`),`main.go` 建窗时用它;自定义 `--title` 不含占位符时**原样显示**(不强行追加版本),空/空白标题回退默认。webview_go **不订阅** WebView2 的 `DocumentTitleChanged`,内嵌页(`loading/error/token.html`)的 `<title>` **不会**改写原生标题,因此不需要"页面加载后复核标题"。
 - Windows spawn 必须经 `cmd /c dsh web --no-open`,因为全局 `dsh` 是 npm `.cmd`/`.ps1` shim,Go 的 `os/exec` 不会自动按 PATHEXT 解析;且需继承 `PATH`/`DSH_HOME`。
 - 服务识别是**三层判据**:`internal/procinfo` 用 `GetExtendedTcpTable(TCP_TABLE_OWNER_PID_LISTENER)` 取**监听 PID**、`QueryFullProcessImageNameW` 取镜像路径、`NtQueryInformationProcess(ProcessCommandLineInformation)` 取命令行;HTTP 侧认 dsh 的**认证边界**(`200`/`303`,或 `401` + `dsh web authentication required` 栅栏文案),**不是"只看 HTTP 200"**。**不要解析 `netstat` 文本(表头随语言本地化、`:3080` 会误配 `:30801`/对端地址),也不要 spawn PowerShell/CIM。**
 - `internal/procinfo` 两个实测事实:①真正监听端口的是 **`node.exe`**(不是 npm shim 的 `cmd.exe`,也不是本壳),命令行为 `"node" "…\npm\\node_modules\@deepseek-ai\dsh\lib\bin.js" web --no-open --host … --port …`;②`ProcessCommandLineInformation`(类 60)会把字符串**复制进调用者缓冲区**(自包含 `UNICODE_STRING`,先按返回长度分配),同用户进程免提权、免 `ReadProcessMemory`。DSH 关键字分强弱两档(见 `internal/procinfo/dsh.go`):`@deepseek-ai\dsh`/`deepseek-harness`/`dsh web`/`\dsh\lib\bin.js` 为强证据;裸 `dsh`、`--port <端口>` 仅弱证据(本壳自身的 `dsh-desktop.exe --port …` 也会命中)。
@@ -92,7 +92,7 @@ CHANGELOG.md                       变更日志(Keep a Changelog)
 
 ## 7. 约定
 
-- 版本:`internal/config.Version`(默认 `0.3.0`,与 `package.json` 及 CHANGELOG 当前发布版一致),发布时用 `-ldflags -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=<ver>` 覆盖,并同步更新 `CHANGELOG.md`、`package.json` 与打 Git tag(如 `v0.3.0`)。
+- 版本:`internal/config.Version`(默认 `0.3.1`,与 `package.json` 及 CHANGELOG 当前发布版一致),发布时用 `-ldflags -X github.com/deepseek-ai/dsh-desktop/internal/config.Version=<ver>` 覆盖,并同步更新 `CHANGELOG.md`、`package.json` 与打 Git tag(如 `v0.3.1`)。
 - 变更日志:凡是影响行为的变更,同步更新 `CHANGELOG.md`(先写 `[Unreleased]`,发布时移入版本)。
 - 语言/注释:代码注释与文档以中文为主,与现有仓库一致。
 - 不要提交 `dsh-desktop.exe`、`.gopath/`、`dsh-desktop.exe~`。

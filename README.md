@@ -173,7 +173,7 @@ dsh-desktop
 | `--poll-ms` | `500` | 健康校验轮询间隔(毫秒,须>0) |
 | `--width` | `1200` | 窗口宽度(须>0) |
 | `--height` | `800` | 窗口高度(须>0) |
-| `--title` | `DeepSeek Harness Desktop {version}` | 窗口标题(仅用于显示;单实例定位不依赖标题)。默认带 `{version}` 占位符,展开为运行时版本(如 `DeepSeek Harness Desktop 0.3.0`);自定义标题不含占位符时**原样显示**,需要显示版本就自己写上 `{version}` |
+| `--title` | `DeepSeek Harness Desktop {version}` | 窗口标题(仅用于显示;单实例定位不依赖标题)。默认带 `{version}` 占位符,展开为运行时版本(如 `DeepSeek Harness Desktop 0.3.1`);自定义标题不含占位符时**原样显示**,需要显示版本就自己写上 `{version}` |
 | `--version` | `false` | 打印版本并退出 |
 | `--check-update` | `false` | 检查 GitHub Releases 是否有新版本并退出 |
 | `--update` | `false` | 下载并应用最新版本,然后退出 |

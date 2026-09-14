@@ -95,7 +95,7 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 - **优先级**：P0
 - **描述**：使用 WebView2 控件创建桌面窗口，加载目标地址。
 - **规格**：
-  - 窗口标题：`DeepSeek Harness Desktop <version>`（如 `DeepSeek Harness Desktop 0.3.0`），即默认标题模板 `DeepSeek Harness Desktop {version}`，`{version}` 展开为运行时版本（`--title` 不含占位符时按用户给定原样显示，见 README 配置表）。**仅用于显示**；单实例定位不依赖标题，见 FR-03。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，实测页面 `<title>`（`loading.html` 等）**不会**改写原生标题，故无需在页面加载后 `SetTitle` 复核。
+  - 窗口标题：`DeepSeek Harness Desktop <version>`（如 `DeepSeek Harness Desktop 0.3.1`），即默认标题模板 `DeepSeek Harness Desktop {version}`，`{version}` 展开为运行时版本（`--title` 不含占位符时按用户给定原样显示，见 README 配置表）。**仅用于显示**；单实例定位不依赖标题，见 FR-03。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，实测页面 `<title>`（`loading.html` 等）**不会**改写原生标题，故无需在页面加载后 `SetTitle` 复核。
   - 默认尺寸：`1200 x 800` 像素；支持最小化、最大化、关闭等标准系统按钮。
   - **加载态/错误态**：服务未就绪时先加载一个**本地 `loading.html`** 占位页；服务健康后再跳转。冷启动(spawn 的 dsh)时用 `WaitHealthy` 从 `dsh web: <url>` 就绪行解析出的**认证 URL(含启动 token)** 执行 `Navigate`,以完成 token→cookie 交换并加载真实 UI;复用路径直接 `Navigate` 到当前端点（或 FR-05 的 `--url`）,由 WebView2 持久化 cookie 完成授权。**认证栅栏自愈/回退**：页面命中 `dsh web authentication required` 时——**自有实例** ⇒ 自动停掉并以新 token 重新拉起（FR-04）；**非本壳实例** ⇒ 改为显示 FR-05 的 token 输入页，不把用户留在 401 文本页。健康校验持续失败时显示**可重试的错误页**(区分"服务启动中 / 端口或认证失败 / dsh 未安装 / WebView2 未安装")。
   - **导航白名单**：仅允许加载**本壳当前端点**（`http://<host>:<port>`）与 `--url` 显式指定的端点；拦截指向**外部域名、`mailto:`、外部 `http(s)`** 的导航并将其交给系统默认浏览器处理（防止外部页面被信任栅栏 / 脚本上下文错误处理）。
@@ -274,7 +274,7 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 - [ ] **AC-01**：首次运行（服务未启动），程序自动启动服务、健康校验通过后界面正常显示；期间窗口先显示加载态，无白屏。
 - [ ] **AC-02**：连续双击两次 `.exe`，只显示一个窗口；第二个进程自动退出，原有窗口被激活并置顶（即使窗口最小化）。
 - [ ] **AC-03**：关闭 WebView2 窗口后，`dsh` 子进程按默认策略保留；重新打开程序时执行**健康校验**（非仅端口探测）后复用该服务；若服务已僵死（端口开放但健康校验失败），程序清理并重启。
-- [ ] **AC-04**：窗口标题栏显示 `DeepSeek Harness Desktop <当前版本>`（如 `DeepSeek Harness Desktop 0.3.0`；版本取自 `internal/config.Version`，可由 `-ldflags -X` 覆盖，标题随之一致变化）。
+- [ ] **AC-04**：窗口标题栏显示 `DeepSeek Harness Desktop <当前版本>`（如 `DeepSeek Harness Desktop 0.3.1`；版本取自 `internal/config.Version`，可由 `-ldflags -X` 覆盖，标题随之一致变化）。
 - [ ] **AC-05**：在 `dsh` 未安装/不可解析的环境下运行，程序给出明确错误提示，而非直接崩溃（Windows 下正确处理 `.cmd` shim）。
 - [ ] **AC-06**：首选端口被非 dsh 程序占用时，程序**不报错退出、不清杀占用者**，自动改用 ≥10000 端口启动自有实例并正常显示界面，日志记录实际端点。
 - [ ] **AC-07**：导航到外部域名时被拦截并交由系统浏览器处理；开发者工具与右键菜单默认不可用。

@@ -65,7 +65,7 @@ DSH 插件( bundle )本质是一个 **npm 包**,它的 `package.json` 声明:
 
 ## 3. 版本管理与发版
 
-- 版本号 = `internal/config.Version`(默认 `0.3.0`,与 `package.json` 及 `CHANGELOG.md` 当前发布版一致),
+- 版本号 = `internal/config.Version`(默认 `0.3.1`,与 `package.json` 及 `CHANGELOG.md` 当前发布版一致),
   也可用 `build.ps1 -Version X.Y.Z` 或 `-ldflags -X .../config.Version=<ver>` 覆盖。
 - 每次行为性变更同步更新 `CHANGELOG.md`(先写 `[Unreleased]`,发版时移入版本标题)。
 - 打 tag(如 `v1.2.3`)触发 `.github/workflows/release.yml`,自动完成:

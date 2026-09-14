@@ -5,11 +5,11 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
-## [Unreleased]
+## [0.3.1] - 2026-09-14
 
 ### Added
 - **窗口标题显示当前版本**:默认标题模板改为 `DeepSeek Harness Desktop {version}`,窗口标题栏(与任务栏)
-  显示如 `DeepSeek Harness Desktop 0.3.0`,`{version}` 展开为运行时版本(`internal/config.Version`,可被
+  显示如 `DeepSeek Harness Desktop 0.3.1`,`{version}` 展开为运行时版本(`internal/config.Version`,可被
   `-ldflags -X` 覆盖后同步变化)。`--title` 支持 `{version}` 占位符;自定义标题若不含占位符则**原样显示**
   (不强行追加版本),空/空白标题回退为默认标题。解析集中在 `config.Config.WindowTitleText()`,`main.go`
   建窗时使用;`--help` 中文文案与 README 配置表同步更新。

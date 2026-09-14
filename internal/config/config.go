@@ -12,11 +12,11 @@ import (
 
 // Version is the application version. It can be overridden at build time:
 //
-//	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.3.0" .
-var Version = "0.3.0"
+//	go build -ldflags "-X github.com/deepseek-ai/dsh-desktop/internal/config.Version=0.3.1" .
+var Version = "0.3.1"
 
 // TitleVersion is the version token shown in the window title: the bare version
-// ("0.3.0"), matching what --version prints.
+// ("0.3.1"), matching what --version prints.
 func TitleVersion() string {
 	return Version
 }
@@ -113,7 +113,7 @@ func (c *Config) PageURL() string {
 // WindowTitleText resolves the raw --title template into the string the window
 // title bar actually shows: every "{version}" placeholder becomes the running
 // version. The default template ends with it, so "out of the box" the title
-// reads "DeepSeek Harness Desktop 0.3.0" and users can quote the version they run.
+// reads "DeepSeek Harness Desktop 0.3.1" and users can quote the version they run.
 //
 // A --title without the placeholder is honored verbatim (the user asked for that
 // exact title), and an empty/blank --title falls back to the default base plus
