@@ -202,7 +202,7 @@ view.Run() // 主循环（阻塞）
 ```
 
 - **加载态/错误态**：`ui/loading.html` 与 `ui/error.html` 用 `go:embed` 打包；健康校验**成功前**先加载 loading，**失败超时**后加载 error（含"重试/端口冲突/dsh 未安装/WebView2 未安装"递进提示）。
-- **标题**：建窗时一次性取 `config.Config.WindowTitleText()`（默认模板 `DeepSeek Harness Desktop {version}` ⇒ `DeepSeek Harness Desktop 0.3.1`），保证 AC-04；`--title` 支持 `{version}` 占位符，不含占位符时原样显示。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，页面 `<title>`（loading/error/token 页）**不会**改写原生标题，故不需要加载后 `SetTitle` 复核。标题不用于单实例定位（D3）。
+- **标题**：建窗时一次性取 `config.Config.WindowTitleText()`（默认模板 `DeepSeek Harness Desktop {version}` ⇒ `DeepSeek Harness Desktop 0.3.2`），保证 AC-04；`--title` 支持 `{version}` 占位符，不含占位符时原样显示。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，页面 `<title>`（loading/error/token 页）**不会**改写原生标题，故不需要加载后 `SetTitle` 复核。标题不用于单实例定位（D3）。
 
 ### 4.4 服务生命周期（FR-04）
 

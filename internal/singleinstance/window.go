@@ -7,6 +7,8 @@ import (
 
 	webview "github.com/webview/webview_go"
 	"golang.org/x/sys/windows"
+
+	"github.com/deepseek-ai/dsh-desktop/internal/dpi"
 )
 
 // WindowOptions configures the shell window and its embedded WebView2 view.
@@ -68,8 +70,16 @@ func newWindow(opts WindowOptions) (webview.WebView, *Window, error) {
 	_ = registerClassEx(wc)
 
 	win := &Window{opts: opts}
+
+	// --width/--height are logical (CSS) pixels. Since the process is now
+	// DPI-aware, CreateWindowEx expects physical pixels. Scale them so the
+	// window appears the same CSS size regardless of the monitor's DPI.
+	screenDpi := dpi.SystemDpi()
+	physWidth := dpi.ScaleToDpi(opts.Width, 96, screenDpi)
+	physHeight := dpi.ScaleToDpi(opts.Height, 96, screenDpi)
+
 	hwnd, err := createWindowEx(0, clsName, mustUTF16(opts.Title), wsOverlappedWnd,
-		cwUseDefault, cwUseDefault, int32(opts.Width), int32(opts.Height),
+		cwUseDefault, cwUseDefault, int32(physWidth), int32(physHeight),
 		0, 0, instance, nil)
 	if err != nil {
 		return nil, nil, err
@@ -99,7 +109,7 @@ func newWindow(opts WindowOptions) (webview.WebView, *Window, error) {
 }
 
 // HWND returns the native window handle.
-func (w *Window) HWND() windows.HWND { return windows.HWND(w.hwnd) }
+func (w *Window) HWND() uintptr { return w.hwnd }
 
 // View returns the embedded WebView2 view.
 func (w *Window) View() webview.WebView { return w.view }
@@ -131,7 +141,17 @@ func wndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 		return 0
 
 	case uintptr(wmSize):
-		resizeChild(windows.HWND(hwnd))
+		resizeChild(hwnd)
+		return 0
+
+	case uintptr(wmDpiChanged):
+		// Windows sends the suggested new bounds (physical pixels) in lParam.
+		// Accept them so the window stays proportional when moved to a monitor
+		// with a different DPI. The WM_SIZE handler resizes the child widget.
+		if lparam != 0 {
+			rc := (*windows.Rect)(unsafe.Pointer(lparam))
+			moveWindow(hwnd, rc.Left, rc.Top, rc.Right-rc.Left, rc.Bottom-rc.Top, true)
+		}
 		return 0
 
 	case uintptr(wmClose):
@@ -148,13 +168,13 @@ func wndProc(hwnd, msg, wparam, lparam uintptr) uintptr {
 }
 
 // resizeChild keeps the embedded WebView2 child filling the client area.
-func resizeChild(parent windows.HWND) {
-	child, err := findWindowEx(uintptr(parent), 0, mustUTF16("webview_widget"), nil)
+func resizeChild(parent uintptr) {
+	child, err := findWindowEx(parent, 0, mustUTF16("webview_widget"), nil)
 	if err != nil || child == 0 {
 		return
 	}
 	var rc windows.Rect
-	if !getClientRect(uintptr(parent), &rc) {
+	if !getClientRect(parent, &rc) {
 		return
 	}
 	moveWindow(child, 0, 0, rc.Right-rc.Left, rc.Bottom-rc.Top, true)

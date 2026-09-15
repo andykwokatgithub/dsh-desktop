@@ -6,6 +6,7 @@
 | V1.0 | 2026-09-02 | AI Assistant | 初始版本创建 |
 | V1.1 | 2026-09-02 | AI Assistant | 审阅后修正：修正 NFR「3s」与 FR-01「30s」口径矛盾；服务生命周期改为"持久化复用 + 复用前健康校验 + 主动停止"；单实例改为唯一窗口类 + 注册消息激活；FR-01 升级为"端口 + HTTP 健康双判据"并补充 Windows `.cmd` spawn 细节；新增安全边界、非目标、工程与分发、成功度量等章节。 |
 | V1.2 | 2026-09-11 | AI Assistant | 新增四项需求：①**端口不固定**——`--port` 降级为"首选端口"，不可用时自动回退到 `[10000, 65535]` 的空闲端口启动本壳自有实例；②**实例归属与认证自愈**——非本壳启动（拿不到进程 token）或复用 cookie 校验不通过时，另起 ≥10000 端口实例；③**启动极速版本检测 + 确认式更新**——有更新时在窗口内用 HTML 页询问，确认即下载/校验/应用并自动重启；④**`--url` 可携带并派生 token**——可直接附着 `dsh web` 打印的认证 URL。⑤**实例识别改为三层判据**——L1 `GetExtendedTcpTable` 取监听 PID、L2 dsh HTTP 认证指纹、L3 进程镜像/命令行（`node.exe` + `@deepseek-ai\dsh … bin.js web`）；L3 仅作**增强**，不可用时降级为 L1+L2，绝不因缺失进程信息误判。⑥**HTML 模式窗体**——启动期交互（加载 / 错误 / token 输入 / 更新询问 / 更新进度）全部改为 `internal/ui` 内嵌本地 HTML 页 + `Bind` 桥接，去掉原生 MessageBox（仅"窗口创建前的参数错误"例外）。⑦**非本壳 DSH 实例可附着**——取不到验证时显示 **HTML token 输入页**，用户粘贴 `dsh web` 打印的认证 URL/token 即可直接使用该实例；另提供"改用本壳自有实例"（≥10000 端口）。相应改写 FR-01/FR-02/FR-04/FR-05/FR-06，并更新 NFR、用户流程、异常矩阵、验收标准、非目标与成功度量。 |
+| V1.3 | 2026-09-14 | AI Assistant | **参数/配置错误改为控制台报错（取消最后一个原生对话框）**：此前只有 CLI 命令（`--version`/`--check-update`/`--update`）的参数错误走控制台，GUI 启动路径的同类错误弹原生 `messageBox`（实测：`dsh-desktop -updaetg` 弹出"配置错误"对话框，终端里反而看不到结论）。现在**所有**参数/配置错误（`flag` 解析失败 + `validate()` 失败）一律打印到 **stderr**（exit code 2，同时写入 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`），**绝不弹原生对话框**；参数解析被提前到 `hideConsole()` 之前，报错时控制台必然可见。原生 MessageBox 仅保留给窗口创建前的**非命令行**失败（单实例/建窗）。**错误只打印一次且整行跟随系统语言**：静音 `flag` 包（`fs.SetOutput(io.Discard)`，避免英文原文 + 本地化前缀重复两次、中英混排），由 `internal/config` 渲染本地化单行原因（未知 flag 附"是否想用 `--<最接近的 flag>`？"；`describeParseError` 覆盖未知 flag / 取值无效 / 布尔取值无效 / 缺少取值 / 写法有误，`validate()`、`applyURL()` 亦本地化），其后打印一次本地化用法（`config.Usage()`）。相应更新 FR-02 的"例外"口径与 AC-14。 |
 
 ---
 
@@ -37,7 +38,7 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 - **实例归属与认证自愈（FR-04）**：只复用"本壳自己启动且仍健康"的实例；本就属本壳但 cookie 失效时自动停掉并以新 token 重拉；**非本壳**实例则走 FR-05 的 token 附着（或由用户选择改用 ≥10000 端口自有实例）。**关窗停止（`--stop-on-exit`）同样只作用于自有实例，且终止前必须能证明 PID 归属**。
 - **快速版本检测与确认式更新（FR-06）**：GUI 启动时后台做"极速"版本检测；发现新版本时在窗口内用 **HTML 页**询问，确认后下载、SHA256 校验、应用并自动重启。
 - **可附着的 token（FR-05）**：既支持用 `--url` 把 `dsh web` 打印的带 token URL 交给本壳，也支持在窗口内的 HTML 页里**现场粘贴 token**，据此附着既有实例并完成 token→cookie 交换。
-- **HTML 模式窗体（FR-02）**：启动期的一切交互——加载、错误、**token 输入**、**更新询问与更新进度**——一律由 `internal/ui` 内嵌的**本地 HTML 页面**承载，经 `Bind` 桥接与 Go 双向通信，**不再使用原生 MessageBox**（唯一例外：窗口尚未创建时的配置/参数错误）。
+- **HTML 模式窗体（FR-02）**：启动期的一切交互——加载、错误、**token 输入**、**更新询问与更新进度**——一律由 `internal/ui` 内嵌的**本地 HTML 页面**承载，经 `Bind` 桥接与 Go 双向通信，**不再使用原生 MessageBox**（唯一例外：窗口创建前且**非命令行**的失败，如单实例/建窗；参数/配置错误一律走控制台，见 FR-02）。
 - **非本壳 DSH 实例可附着（FR-05）**：若端口上的 DSH 实例不是本壳启动的（拿不到进程 token），或持久化 cookie 已失效，则在窗口内显示 **HTML token 输入页**，让用户粘贴 `dsh web` 打印的认证 URL/token 后**直接使用该实例**；用户也可选择改用本壳自有实例（≥10000 端口）。
 
 ---
@@ -95,14 +96,14 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 - **优先级**：P0
 - **描述**：使用 WebView2 控件创建桌面窗口，加载目标地址。
 - **规格**：
-  - 窗口标题：`DeepSeek Harness Desktop <version>`（如 `DeepSeek Harness Desktop 0.3.1`），即默认标题模板 `DeepSeek Harness Desktop {version}`，`{version}` 展开为运行时版本（`--title` 不含占位符时按用户给定原样显示，见 README 配置表）。**仅用于显示**；单实例定位不依赖标题，见 FR-03。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，实测页面 `<title>`（`loading.html` 等）**不会**改写原生标题，故无需在页面加载后 `SetTitle` 复核。
+  - 窗口标题：`DeepSeek Harness Desktop <version>`（如 `DeepSeek Harness Desktop 0.3.2`），即默认标题模板 `DeepSeek Harness Desktop {version}`，`{version}` 展开为运行时版本（`--title` 不含占位符时按用户给定原样显示，见 README 配置表）。**仅用于显示**；单实例定位不依赖标题，见 FR-03。webview_go 不订阅 WebView2 的 `DocumentTitleChanged`，实测页面 `<title>`（`loading.html` 等）**不会**改写原生标题，故无需在页面加载后 `SetTitle` 复核。
   - 默认尺寸：`1200 x 800` 像素；支持最小化、最大化、关闭等标准系统按钮。
   - **加载态/错误态**：服务未就绪时先加载一个**本地 `loading.html`** 占位页；服务健康后再跳转。冷启动(spawn 的 dsh)时用 `WaitHealthy` 从 `dsh web: <url>` 就绪行解析出的**认证 URL(含启动 token)** 执行 `Navigate`,以完成 token→cookie 交换并加载真实 UI;复用路径直接 `Navigate` 到当前端点（或 FR-05 的 `--url`）,由 WebView2 持久化 cookie 完成授权。**认证栅栏自愈/回退**：页面命中 `dsh web authentication required` 时——**自有实例** ⇒ 自动停掉并以新 token 重新拉起（FR-04）；**非本壳实例** ⇒ 改为显示 FR-05 的 token 输入页，不把用户留在 401 文本页。健康校验持续失败时显示**可重试的错误页**(区分"服务启动中 / 端口或认证失败 / dsh 未安装 / WebView2 未安装")。
   - **导航白名单**：仅允许加载**本壳当前端点**（`http://<host>:<port>`）与 `--url` 显式指定的端点；拦截指向**外部域名、`mailto:`、外部 `http(s)`** 的导航并将其交给系统默认浏览器处理（防止外部页面被信任栅栏 / 脚本上下文错误处理）。
   - **HTML 模式窗体（启动期交互统一，不使用原生 MessageBox）**：`loading.html` / `error.html` / `token.html` / `update.html` / `updating.html` 均为 `internal/ui` 内嵌的**本地页面**，通过 `view.Bind` 双向通信：页面 → Go 走 Bind 函数，Go → 页面走 `view.Dispatch` + `Eval`。
     - 页面契约（JS 全局）：`__dshSubmitToken(pasted)`、`__dshSkipToken()`、`__dshUpdateDecision(update)`；Go → 页面的回调 `__dshTokenResult(ok, message)`、`__dshError(message)`。
     - Bind 回调运行在 UI 线程，**不得阻塞**：耗时的校验/下载一律丢到 goroutine，结果再 `Dispatch` 回页面（页面先用"校验中…/下载中…"占位）。
-    - **例外**：窗口创建前的配置/参数错误仍用原生 `messageBox`（此时没有 WebView 可承载）；CLI 命令（`--version`/`--check-update`/`--update`）仍走控制台。
+    - **例外（V1.3 起）**：**参数/配置错误一律走控制台**，不弹原生对话框——`flag` 解析失败与 `validate()` 失败都打印到 stderr（exit code 2，同时写入 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`）；参数解析发生在 `hideConsole()` 之前，所以报错时控制台必然可见。**错误只打印一次且整行跟随系统语言**：`flag` 包被静音（`fs.SetOutput(io.Discard)`），由 `internal/config` 渲染本地化的单行原因（未知 flag 附"是否想用 `--<最接近的 flag>`？"、取值无效、缺少取值、写法有误等），随后打印一次本地化用法。原生 `messageBox` 仅保留给窗口创建前的**非命令行**失败（单实例、建窗）。
     - 页面只承载本地内容，不放行任何远端资源（与导航白名单一致）。
   - **开发者工具与右键菜单**：默认关闭；提供配置开关（`devtools`、`context_menu`），可在后续迭代暴露。当前版本以"安全默认"为原则。
 
@@ -274,7 +275,7 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 - [ ] **AC-01**：首次运行（服务未启动），程序自动启动服务、健康校验通过后界面正常显示；期间窗口先显示加载态，无白屏。
 - [ ] **AC-02**：连续双击两次 `.exe`，只显示一个窗口；第二个进程自动退出，原有窗口被激活并置顶（即使窗口最小化）。
 - [ ] **AC-03**：关闭 WebView2 窗口后，`dsh` 子进程按默认策略保留；重新打开程序时执行**健康校验**（非仅端口探测）后复用该服务；若服务已僵死（端口开放但健康校验失败），程序清理并重启。
-- [ ] **AC-04**：窗口标题栏显示 `DeepSeek Harness Desktop <当前版本>`（如 `DeepSeek Harness Desktop 0.3.1`；版本取自 `internal/config.Version`，可由 `-ldflags -X` 覆盖，标题随之一致变化）。
+- [ ] **AC-04**：窗口标题栏显示 `DeepSeek Harness Desktop <当前版本>`（如 `DeepSeek Harness Desktop 0.3.2`；版本取自 `internal/config.Version`，可由 `-ldflags -X` 覆盖，标题随之一致变化）。
 - [ ] **AC-05**：在 `dsh` 未安装/不可解析的环境下运行，程序给出明确错误提示，而非直接崩溃（Windows 下正确处理 `.cmd` shim）。
 - [ ] **AC-06**：首选端口被非 dsh 程序占用时，程序**不报错退出、不清杀占用者**，自动改用 ≥10000 端口启动自有实例并正常显示界面，日志记录实际端点。
 - [ ] **AC-07**：导航到外部域名时被拦截并交由系统浏览器处理；开发者工具与右键菜单默认不可用。
@@ -284,7 +285,7 @@ DeepSeek Harness（`dsh`）命令行工具提供 `dsh web` 命令来启动 Web U
 - [ ] **AC-11**：存在新版本时应用正常启动（无明显延迟），随后在窗口内显示 **HTML 更新询问页**（非原生对话框）；选"立即更新"经下载 + SHA256 校验 + 替换后**自动重启**为新版本；选"稍后提醒"后同版本不再提示；`--startup-update=false` 或离线时**无打扰、无报错**。
 - [ ] **AC-12**：首选端口上是**非本壳** DSH 实例时，窗口显示 **HTML token 输入页**；粘贴 `dsh web` 打印的整条 URL（或裸 token）后完成 token→cookie 交换并**使用该实例**（不新增 dsh 进程）；输入无效 token 时页内报错、可重试且不跳转。
 - [ ] **AC-13**：在 token 页选择"改用本壳自有实例"后，在 **≥10000** 端口成功启动自有实例并显示界面；原 DSH 实例**未被终止**。
-- [ ] **AC-14**：启动期全部交互（加载 / 错误 / token 输入 / 更新询问 / 更新进度）均由内嵌 **HTML 页面**呈现，界面上不出现原生 MessageBox；唯一例外是窗口创建前的参数错误对话框。
+- [ ] **AC-14**：启动期全部交互（加载 / 错误 / token 输入 / 更新询问 / 更新进度）均由内嵌 **HTML 页面**呈现，界面上不出现原生 MessageBox；窗口创建前的**非命令行**失败（单实例/建窗）仍用原生对话框。**参数/配置错误（含未知 flag、非法取值、`--url` 冲突）不弹任何对话框**：命令在控制台**只打印一次**本地化错误（含纠错建议）+ 一次本地化用法，随后以 exit code 2 退出，同时写入日志；中英文各举一例——`dsh-desktop --help11` → `配置错误: 未知参数 --help11（是否想用 --help？）` + `用法: dsh-desktop [选项]`；英文系统 → `Configuration error: unknown flag --help11 (did you mean --help?)` + `Usage: dsh-desktop [options]`（不得再回显 `flag provided but not defined` 之类的英文原文）。
 - [ ] **AC-15**：附着到**非本壳** DSH 实例（cookie 或 token 附着）后，即使带 `--stop-on-exit`，关闭窗口也**不会终止**该实例（日志说明"按其归属不予停止"）；只有本壳自建的实例（本次 spawn，或记录中包装器/监听者可证）才会被停止。
 - [ ] **AC-16**：`--stop-on-exit` 下，即便记录中的 `listenerPid` 已过期（真正服务端口的进程换了 PID），只要包装器进程树可证属本壳（本壳直接子进程，或仍以记录中的启动时间在运行），关窗即**真的停止**该实例（端口释放、日志列出被终止的 PID），**不会**出现"日志说已停止、实例仍在跑"；若端口上仍有实例却无法证明归属，则**放弃终止并如实记录**，绝不误杀。
 

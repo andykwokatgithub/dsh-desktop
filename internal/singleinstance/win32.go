@@ -16,6 +16,7 @@ const (
 	wmSize          uint32 = 0x0005
 	wmClose         uint32 = 0x0010
 	wmSetIcon       uint32 = 0x0080
+	wmDpiChanged    uint32 = 0x02E0 // WM_DPICHANGED (Win10 1607+)
 	swShow          int32  = 5   // SW_SHOW
 	swRestore       int32  = 9   // SW_RESTORE
 	smtoAbortIfHung uint32 = 0x0002

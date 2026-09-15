@@ -5,6 +5,43 @@
 本文件的格式基于 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)，
 且本项目遵循 [语义化版本](https://semver.org/lang/zh-CN/)（Semantic Versioning）。
 
+## [0.3.2] - 2026-09-15
+
+### Added
+- **未知 flag 追加纠错建议**:`internal/config` 新增 `suggestFlag`(含 transposition 感知的 `editDistance`,
+  阈值 `1+len/5`),把拼错的参数补成 `未知参数 --updaetg（是否想用 --update？）`
+  (英文:`unknown flag --updaetg (did you mean --update?)`);候选集包含 **`help`**——`-h`/`--help` 由 `flag`
+  包直接应答、不经 `flag.VisitAll`,否则 `--help11` 这类拼错提不出建议;距离过远则不附任何建议。
+
+### Fixed
+- **WebView2 文字模糊（DPI 感知缺失）**:此前进程从未声明 DPI awareness——`webview_go` 只在
+  `m_owns_window == true`（即它自己创建窗口）时调用 `enable_dpi_awareness()`，而本壳把自建的 HWND
+  传入 `webview.NewWindow`，导致 `m_owns_window == false`，该调用被完全跳过。在高 DPI 显示器上
+  （150%/200% 缩放），Windows 对整个窗口做位图缩放，WebView2 渲染的页面和文字明显模糊。
+  新增 `internal/dpi` 包，在 `main()` 第一行调用 `dpi.SetAwareness()`（优先 per-monitor V2 →
+  per-monitor V1 → system-level），确保在任何窗口创建之前完成 DPI 声明。
+  同时 `--width`/`--height` 现在是逻辑（CSS）像素，`newWindow` 会按系统 DPI 换算为物理像素再
+  传给 `CreateWindowEx`；`WM_DPICHANGED` 也被处理，窗口跨显示器移动时按系统建议的边界自动调整。
+- **参数错误一律走控制台（不再弹原生对话框）**:此前只有 CLI 命令(`--version`/`--check-update`/`--update`)
+  的参数错误走控制台,GUI 启动路径的同类错误弹"配置错误"原生 `messageBox`——在终端里敲错 flag(如
+  `dsh-desktop -updaetg`)只会看到对话框,终端里反而没有结论。现在 `flag` 解析失败与 `config.validate()` 失败
+  **一律打印到 stderr**(exit code 2)并写入 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`,**绝不弹框、也不开窗口**;
+  参数解析被提前到 `hideConsole()` **之前**,所以报错时控制台必然可见(不再有"控制台已隐藏 ⇒ 只能弹框"的情形)。
+  原生 MessageBox 仅保留给窗口创建前的**非命令行**失败(单实例/建窗);`main.isCLICommand` 随之删除。
+- **参数错误只打印一次,且整行跟随系统语言**:此前 `flag` 包先自己打印英文原文 + 用法,`main` 再打印
+  `配置错误: <同一句英文>`,同一件事说两遍、中英混排。现在 `internal/config` 用 `fs.SetOutput(io.Discard)`
+  **静音 `flag` 包**,由 `describeParseError` 把各类解析错误(未知 flag / 取值无效 / 布尔取值无效 / 缺少取值 /
+  写法有误)渲染成中/英单行原因,`validate()`/`applyURL()` 的语义错误也走新的 `localizedErr`;`main.reportConfigError`
+  只打印一行 `配置错误: <本地化原因>` 加一次 `config.Usage()`(用法本身也是中/英,原来只由 `flag` 包在报错时
+  顺带打印),`--help` 改由 main 打印 `config.Usage()` 后 exit 0。效果:
+  `dsh-desktop --help11` → `配置错误: 未知参数 --help11（是否想用 --help？）` + 用法(exit 2),
+  英文系统下为 `Configuration error: unknown flag --help11 (did you mean --help?)` + `Usage: dsh-desktop [options]`。
+- **测试**:新增 `TestParseErrorMessageLanguage`(7 种错误形态的中/英逐字断言,含 `--url` 冲突与取值越界)、
+  `TestUsageLocalized`;`TestUnknownFlagSuggestion` 增加"不得回显 `flag provided but not defined`"的断言。
+- **文档同步**:`README.md`(参数校验一节给出真实的控制台输出与中英对照、交互说明)、
+  `AGENTS.md`(§3/§6 的报错口径)、`docs/dsh-desktop-prd.md`(新增 V1.3 修订行,FR-02 的"例外"改为
+  "参数错误走控制台",AC-14 明确"参数错误不弹任何对话框、只打印一次且跟随系统语言")。
+
 ## [0.3.1] - 2026-09-14
 
 ### Added

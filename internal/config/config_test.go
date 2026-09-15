@@ -1,6 +1,8 @@
 package config
 
 import (
+	"errors"
+	"flag"
 	"strings"
 	"testing"
 	"time"
@@ -127,6 +129,122 @@ func TestParseFlags(t *testing.T) {
 	}
 	if !cfg.PortSet {
 		t.Fatal("PortSet = false, want true when --port is written")
+	}
+}
+
+// TestUnknownFlagSuggestion covers the typo hint on a mistyped flag: the flag
+// package reports "flag provided but not defined" without saying which flag was
+// meant, so Parse adds the closest defined name when it is close enough.
+func TestUnknownFlagSuggestion(t *testing.T) {
+	// The reported case: "-updaetg" should point at --update.
+	_, err := Parse([]string{"-updaetg"})
+	if err == nil {
+		t.Fatal("Parse() with an unknown flag should error")
+	}
+	if !strings.Contains(err.Error(), "--update") {
+		t.Fatalf("error %q should suggest --update", err.Error())
+	}
+	// The flag package's own English line must not survive: the console shows one
+	// localized reason, not that reason twice.
+	if strings.Contains(err.Error(), "flag provided but not defined") {
+		t.Fatalf("error %q should not echo the flag package's raw message", err.Error())
+	}
+
+	// "--help11" must land on --help, which the flag package answers itself and
+	// therefore never exposes through VisitAll.
+	_, err = Parse([]string{"--help11"})
+	if err == nil {
+		t.Fatal("Parse() with an unknown flag should error")
+	}
+	if !strings.Contains(err.Error(), "--help") {
+		t.Fatalf("error %q should suggest --help", err.Error())
+	}
+	// The real --help still works and stays flag.ErrHelp.
+	if _, err := Parse([]string{"--help"}); !errors.Is(err, flag.ErrHelp) {
+		t.Fatalf("Parse(--help) error = %v, want flag.ErrHelp", err)
+	}
+
+	// A name nowhere near any defined flag gets no hint.
+	_, err = Parse([]string{"--zzzzzzzz"})
+	if err == nil {
+		t.Fatal("Parse() with an unknown flag should error")
+	}
+	if strings.Contains(err.Error(), "想用") || strings.Contains(err.Error(), "did you mean") {
+		t.Fatalf("error %q should not suggest anything", err.Error())
+	}
+}
+
+// TestParseErrorMessageLanguage pins that every parameter-error shape follows the
+// system language (the same rule --help and the --update output already follow),
+// keeping the flag and value detail in the user's language.
+func TestParseErrorMessageLanguage(t *testing.T) {
+	cases := []struct {
+		name string
+		args []string
+		zh   string
+		en   string
+	}{
+		{"unknown flag", []string{"--updaetg"}, "未知参数 --updaetg（是否想用 --update？）", `unknown flag --updaetg (did you mean --update?)`},
+		{"int value", []string{"--port", "abc"}, `参数 --port 的取值 "abc" 无效`, `invalid value "abc" for flag --port`},
+		{"bool value", []string{"--devtools=maybe"}, `参数 --devtools 的布尔取值 "maybe" 无效（应为 true/false）`, `invalid boolean value "maybe" for flag --devtools (want true/false)`},
+		{"missing value", []string{"--port"}, "参数 --port 缺少取值", "flag --port needs an argument"},
+		{"bad syntax", []string{"---x"}, "参数写法有误: ---x", "bad flag syntax: ---x"},
+		{"port range", []string{"--port", "70000"}, "参数 --port 必须在 1-65535 之间, 当前为 70000", "--port must be between 1 and 65535, got 70000"},
+		{"url conflict", []string{"--port", "4000", "--url", "http://127.0.0.1:4001/"}, `参数 --url("http://127.0.0.1:4001/") 的端口 4001 与 --port(4000) 不一致`, `--url ("http://127.0.0.1:4001/") port 4001 disagrees with --port (4000)`},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Setenv("LC_ALL", "zh_CN.UTF-8")
+			_, err := Parse(tc.args)
+			if err == nil {
+				t.Fatalf("Parse(%q) should error", tc.args)
+			}
+			if err.Error() != tc.zh {
+				t.Fatalf("zh error = %q, want %q", err.Error(), tc.zh)
+			}
+			t.Setenv("LC_ALL", "en_US.UTF-8")
+			_, err = Parse(tc.args)
+			if err == nil {
+				t.Fatalf("Parse(%q) should error", tc.args)
+			}
+			if err.Error() != tc.en {
+				t.Fatalf("en error = %q, want %q", err.Error(), tc.en)
+			}
+		})
+	}
+}
+
+// TestUsageLocalized checks the help text a parameter error is followed by (and
+// that --help prints): it must exist in both languages and list the flags.
+func TestUsageLocalized(t *testing.T) {
+	t.Setenv("LC_ALL", "zh_CN.UTF-8")
+	zh := Usage()
+	if !strings.Contains(zh, "用法: dsh-desktop") || !strings.Contains(zh, "--stop-on-exit") {
+		t.Fatalf("Usage() (zh) = %q", zh)
+	}
+	t.Setenv("LC_ALL", "en_US.UTF-8")
+	en := Usage()
+	if !strings.Contains(en, "Usage: dsh-desktop") || !strings.Contains(en, "--stop-on-exit") {
+		t.Fatalf("Usage() (en) = %q", en)
+	}
+}
+
+// TestEditDistance pins the transposition-aware distance the typo hint uses.
+func TestEditDistance(t *testing.T) {
+	cases := []struct {
+		a, b string
+		want int
+	}{
+		{"port", "port", 0},
+		{"prot", "port", 1},      // adjacent transposition
+		{"updaetg", "update", 2}, // transposed t/e plus the stray g
+		{"", "abc", 3},           // pure insertions
+		{"startup-timeot", "startup-timeout", 1},
+	}
+	for _, tc := range cases {
+		if got := editDistance(tc.a, tc.b); got != tc.want {
+			t.Fatalf("editDistance(%q, %q) = %d, want %d", tc.a, tc.b, got, tc.want)
+		}
 	}
 }
 

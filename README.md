@@ -148,10 +148,11 @@ dsh-desktop
   占用者身份写入日志。
 - **重复启动**(窗口已存在):激活已有窗口并置顶(即使最小化),新进程立即退出。
 
-> 所有交互(加载/错误/token/更新询问)都由窗口内的**本地 HTML 页**承载,由 `Bind` 桥接回调 Go;
-> 原生 MessageBox 只保留给"窗口创建之前"的失败(单实例/建窗/参数校验错误)。窗口创建之后的错误
-> 一律显示在页面上(错误原因可注入、可重试),同时写入
-> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`。
+> 所有交互(加载/错误/token/更新询问)都由窗口内的**本地 HTML 页**承载,由 `Bind` 桥接回调 Go。
+> **参数/配置错误一律走控制台**(stderr,exit code 2,同时写入
+> `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`),**不弹原生对话框**——参数写错的人一定是在终端/shortcut
+> 里发起的,错误就该留在他看的那个终端里。原生 MessageBox 只保留给窗口创建前的**非命令行**失败
+> (单实例/建窗),窗口创建之后的错误一律显示在页面上(错误原因可注入、可重试)。
 
 ---
 
@@ -173,13 +174,30 @@ dsh-desktop
 | `--poll-ms` | `500` | 健康校验轮询间隔(毫秒,须>0) |
 | `--width` | `1200` | 窗口宽度(须>0) |
 | `--height` | `800` | 窗口高度(须>0) |
-| `--title` | `DeepSeek Harness Desktop {version}` | 窗口标题(仅用于显示;单实例定位不依赖标题)。默认带 `{version}` 占位符,展开为运行时版本(如 `DeepSeek Harness Desktop 0.3.1`);自定义标题不含占位符时**原样显示**,需要显示版本就自己写上 `{version}` |
+| `--title` | `DeepSeek Harness Desktop {version}` | 窗口标题(仅用于显示;单实例定位不依赖标题)。默认带 `{version}` 占位符,展开为运行时版本(如 `DeepSeek Harness Desktop 0.3.2`);自定义标题不含占位符时**原样显示**,需要显示版本就自己写上 `{version}` |
 | `--version` | `false` | 打印版本并退出 |
 | `--check-update` | `false` | 检查 GitHub Releases 是否有新版本并退出 |
 | `--update` | `false` | 下载并应用最新版本,然后退出 |
 
 > 参数校验：`--host/--port/--width/--height/--startup-timeout/--poll-ms/--url` 在启动前做语义校验，
-> 值非法即在**控制台**(CLI 命令)或**窗口内错误页**(GUI 启动,窗口创建前则用原生对话框)中报错并退出。
+> 值非法即**在控制台**报错并退出(exit code 2,写入 `%LOCALAPPDATA%\dsh-desktop\dsh-desktop.log`),
+> **既不弹原生对话框、也不开窗口**。错误只打印**一次**且**跟随系统语言**(中文/英文),未知 flag 会附带
+> 最接近的建议,随后是该语言的用法,例如:
+>
+> ```text
+> $ dsh-desktop --updaetg
+> 配置错误: 未知参数 --updaetg（是否想用 --update？）
+> 用法: dsh-desktop [选项]
+>
+> 选项:
+>   --check-update            检查 GitHub Releases 是否有新版本并退出
+>   --command                要启动的 dsh 子命令 (web)  (默认 web)
+>   ...
+> ```
+>
+> 同类消息还有 `参数 --port 的取值 "abc" 无效`、`参数 --port 缺少取值`、`参数 --port 必须在 1-65535 之间,
+> 当前为 70000` 等;英文系统下分别是 `unknown flag --updaetg (did you mean --update?)`、
+> `invalid value "abc" for flag --port`、`flag --port needs an argument`、`--port must be between 1 and 65535, got 70000`。
 > 规范写法为双横杠 `--flag`；Go 的 `flag` 包同时兼容单横杠 `-flag` 输入。
 >
 > **`--help` 文案跟随系统语言**:优先取 `LC_ALL`/`LC_MESSAGES`/`LANG`,未设置时回退 Windows 用户界面
@@ -241,6 +259,7 @@ go run . -version   # -> dsh-desktop 1.2.3
 > **构建形态**:出于让 CLI 命令在 PowerShell/cmd 中同步输出等考量,EXE 用 **console 子系统**构建
 > (不再用 `-H=windowsgui`)。GUI 运行时 `main.hideConsole()` 会隐藏双击产生的控制台窗口(有极短的
 > 黑框闪现);从已有终端启动 GUI 时复用该终端控制台,PowerShell 会阻塞直到窗体关闭。
+> **参数错误在 `hideConsole()` 之前就打印并退出**,所以终端里一定看得到,不会弹对话框。
 > `webview_go` 依赖 CGO,需要本机 Windows + GCC;不能跨平台交叉编译。
 > 运行 `dsh-desktop.exe` 会真的拉起 `dsh web`,不要在无 DSH 环境时盲目运行;验证请用
 > `go run . -version` 或单测。

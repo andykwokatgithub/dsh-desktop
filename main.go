@@ -3,8 +3,13 @@
 // It identifies the dsh web backend (whose instance is it? is it dsh at all?),
 // starts or reuses one, enforces a single running instance, and embeds the UI in
 // a native window. Every startup interaction -- loading, errors, the token input
-// for somebody else's instance -- is a local HTML page inside that window; the
-// only native dialog left is the pre-window configuration error.
+// for somebody else's instance -- is a local HTML page inside that window.
+//
+// Parameter errors are the one exception, and they go the other way: a bad
+// command line is a console concern (whoever typed it is looking at a terminal),
+// so it is reported on stderr and never in a native dialog. The remaining native
+// dialogs are reserved for pre-window failures that are not command-line
+// mistakes (single instance, window creation).
 package main
 
 import (
@@ -29,6 +34,7 @@ import (
 
 	"github.com/deepseek-ai/dsh-desktop/internal/appdir"
 	"github.com/deepseek-ai/dsh-desktop/internal/config"
+	"github.com/deepseek-ai/dsh-desktop/internal/dpi"
 	"github.com/deepseek-ai/dsh-desktop/internal/procinfo"
 	"github.com/deepseek-ai/dsh-desktop/internal/service"
 	"github.com/deepseek-ai/dsh-desktop/internal/singleinstance"
@@ -38,25 +44,26 @@ import (
 )
 
 func main() {
+	// Declare DPI awareness before any window is created. webview_go only calls
+	// enable_dpi_awareness() when it owns the window (m_owns_window == true);
+	// since we pass our own HWND, the library skips it entirely. Without this,
+	// Windows bitmap-scales the whole window and WebView2 text renders blurry.
+	dpi.SetAwareness()
+
 	// webview_go requires the window and message loop on a locked OS thread.
 	runtime.LockOSThread()
 
-	// CLI commands (--version / --check-update / --update) bypass the GUI. The
-	// binary is a console-subsystem build so PowerShell waits for and captures
-	// their output as it does any console command. For a GUI launch (no CLI
-	// command), swallow the console window that the console-subsystem build
-	// otherwise creates on double-click.
-	cli := isCLICommand(os.Args[1:])
-	if !cli {
-		hideConsole()
-	}
-
+	// Flags come first, before the console is hidden: a bad parameter is a
+	// command-line mistake and is reported on the console like any other CLI
+	// error (see reportConfigError), so the console that the console-subsystem
+	// build created must still be visible while the message is printed.
 	cfg, err := config.Parse(os.Args[1:])
 	if err != nil {
 		if errors.Is(err, flag.ErrHelp) {
-			os.Exit(0) // usage already printed by the flag package
+			fmt.Fprint(os.Stderr, config.Usage()) // localized help, printed once
+			os.Exit(0)
 		}
-		reportConfigError(cli, err)
+		reportConfigError(err)
 	}
 	if cfg.ShowVersion {
 		fmt.Printf("dsh-desktop %s\n", config.Version)
@@ -69,6 +76,11 @@ func main() {
 		runUpdateCmd(cfg)
 		os.Exit(0)
 	}
+
+	// GUI launch from here on. The console-subsystem build gives the process a
+	// console even on double-click, so swallow that window -- except when it is
+	// shared with the terminal this was started from (see hideConsole).
+	hideConsole()
 
 	// FR-03: single instance. If another is running, activate it and exit.
 	_, ok, err := singleinstance.Acquire()
@@ -509,31 +521,27 @@ func jsString(s string) string {
 	return string(raw)
 }
 
-// reportConfigError presents a configuration/parameter error according to how
-// the process was invoked. Console CLI commands (--version / --check-update /
-// --update) print the error to stderr and exit; the GUI launch path shows the
-// native dialog (there is no console) via fatal.
-func reportConfigError(cli bool, err error) {
-	if cli {
-		_ = appendLog("配置错误: " + err.Error())
-		fmt.Fprintf(os.Stderr, "配置错误: %s\n", err.Error())
-		os.Exit(2)
-	}
-	fatal(2, "配置错误", err.Error())
-}
-
-// isCLICommand reports whether the invocation is one of the console CLI
-// commands, whose output and errors go to the console rather than a dialog.
-func isCLICommand(args []string) bool {
-	for _, a := range args {
-		switch a {
-		case "-version", "--version",
-			"-check-update", "--check-update",
-			"-update", "--update":
-			return true
-		}
-	}
-	return false
+// reportConfigError reports a parameter/configuration error on the console (and
+// in the log) and exits.
+//
+// A bad parameter is a command-line mistake: the invocation came from a shell,
+// a shortcut, or a script, and the person who typed it is looking at a terminal.
+// A native dialog would cover that terminal (and, for a console-subsystem build
+// whose console was hidden, hide the message entirely), so parameter errors are
+// printed to stderr and never shown in a MessageBox.
+//
+// The reason itself is already localized by internal/config (a mistyped flag
+// even comes with a "did you mean" hint), and the flag package is silenced
+// there, so the console shows one error line plus the usage -- each exactly
+// once, in the system language, instead of an English problem line repeated
+// under a Chinese prefix.
+func reportConfigError(err error) {
+	chinese := config.UseChineseUI()
+	line := fmt.Sprintf("%s: %s", localize(chinese, "配置错误", "Configuration error"), err.Error())
+	_ = appendLog(line)
+	fmt.Fprintln(os.Stderr, line)
+	fmt.Fprint(os.Stderr, config.Usage())
+	os.Exit(2)
 }
 
 // hideConsole hides the console window that a console-subsystem build gets on
@@ -564,8 +572,10 @@ func hideConsole() {
 }
 
 // fatal logs to a file, shows a native error dialog, and exits. It is reserved
-// for failures that happen before (or instead of) a window: the embedded HTML
-// pages carry everything else.
+// for failures that happen before (or instead of) a window and are not
+// command-line mistakes -- single instance, window creation. Everything a user
+// can see after the window exists is carried by the embedded HTML pages, and
+// parameter errors go to the console (see reportConfigError).
 func fatal(code int, title, text string) {
 	_ = appendLog(title + ": " + text)
 	messageBox(title, text)
